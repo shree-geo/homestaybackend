@@ -4,6 +4,7 @@ Mapping from PostgreSQL schema to Django ORM
 """
 import uuid
 from django.contrib.gis.db import models
+from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
 from django.contrib.auth.hashers import make_password, check_password
 from django.utils import timezone
 
@@ -153,7 +154,23 @@ class Tenant(models.Model):
         return self.name
 
 
-class TenantUser(models.Model):
+class TenantUserManager(BaseUserManager):
+    def create_user(self, user_name, email=None, password=None, **extra_fields):
+        if not user_name:
+            raise ValueError('The user_name field must be set')
+        user = self.model(user_name=user_name, email=email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, user_name, email=None, password=None, **extra_fields):
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+        extra_fields.setdefault('role', 'OWNER')
+        return self.create_user(user_name, email, password, **extra_fields)
+
+
+class TenantUser(AbstractBaseUser, PermissionsMixin):
     ROLE_CHOICES = [
         ('OWNER', 'Owner'),
         ('MANAGER', 'Manager'),
@@ -163,38 +180,37 @@ class TenantUser(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='users')
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='users', null=True, blank=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='RECEPTIONIST')
     user_name = models.TextField(unique=True)
     email = models.TextField(null=True, blank=True)
-    password_hash = models.TextField()
     full_name = models.TextField(null=True, blank=True)
     mobile_number = models.TextField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
+    is_staff = models.BooleanField(default=False)
     email_verified = models.BooleanField(default=False)
     mobile_verified = models.BooleanField(default=False)
-    last_login_at = models.DateTimeField(null=True, blank=True)
+    last_login = models.DateTimeField(null=True, blank=True)
     verification_token = models.TextField(null=True, blank=True)
     reset_password_token = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    objects = TenantUserManager()
+
+    USERNAME_FIELD = 'user_name'
+    REQUIRED_FIELDS = ['email']
 
     class Meta:
         db_table = 'tenant_users'
         unique_together = [['tenant', 'user_name']]
 
     def __str__(self):
-        return f"{self.user_name} ({self.tenant.name})"
-
-    def set_password(self, raw_password):
-        self.password_hash = make_password(raw_password)
-
-    def check_password(self, raw_password):
-        return check_password(raw_password, self.password_hash)
+        return f"{self.user_name} ({self.tenant.name if self.tenant else 'No Tenant'})"
 
     def update_last_login(self):
-        self.last_login_at = timezone.now()
-        self.save(update_fields=['last_login_at'])
+        self.last_login = timezone.now()
+        self.save(update_fields=['last_login'])
 
 
 class TenantApiKey(models.Model):

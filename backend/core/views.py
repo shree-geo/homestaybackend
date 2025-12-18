@@ -102,6 +102,7 @@ def login(request):
 
 
 @api_view(['GET'])
+@permission_classes([AllowAny])
 def health_check(request):
     """
     Health check endpoint

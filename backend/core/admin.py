@@ -66,7 +66,7 @@ class TenantUserAdmin(admin.ModelAdmin):
     list_display = ['user_name', 'full_name', 'email', 'tenant', 'role', 'is_active', 'created_at']
     search_fields = ['user_name', 'email', 'full_name']
     list_filter = ['tenant', 'role', 'is_active']
-    readonly_fields = ['password_hash', 'last_login_at']
+    readonly_fields = ['last_login', 'created_at', 'updated_at']
 
 
 @admin.register(PropertyType)

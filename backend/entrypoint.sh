@@ -7,25 +7,19 @@ while ! pg_isready -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER; do
 done
 echo "PostgreSQL started"
 
+# Create necessary PostgreSQL extensions
+echo "Creating PostgreSQL extensions..."
+PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+
 # Run migrations
 echo "Running migrations..."
+python manage.py makemigrations core --noinput || true
 python manage.py migrate --noinput
 
 # Collect static files
 echo "Collecting static files..."
 python manage.py collectstatic --noinput
-
-# Create superuser if it doesn't exist
-echo "Creating superuser..."
-python manage.py shell << END
-from django.contrib.auth import get_user_model
-User = get_user_model()
-if not User.objects.filter(username='admin').exists():
-    User.objects.create_superuser('admin', 'admin@example.com', 'admin')
-    print('Superuser created.')
-else:
-    print('Superuser already exists.')
-END
 
 # Start server
 echo "Starting server..."
