@@ -7,9 +7,6 @@ psycopg2-binary==2.9.9
 python-dotenv==1.0.0
 Pillow==10.1.0
 
-# For PostGIS support
-GDAL==3.6.2
-
 # Additional utilities
 PyJWT==2.8.0
 python-dateutil==2.8.2
