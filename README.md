@@ -66,12 +66,13 @@ grihaStayPro/
 cd /home/shree/grihaStayPro
 ```
 
-### 2. Set up environment variables
+### 2. Set up environment variables and docker file
 
-Copy the example environment file:
+Copy the example environment file and compose file :
 
 ```bash
 cp .env.example .env
+cp docker-compose.example.yml docker-compose.yml
 ```
 
 Edit `.env` if needed (default values should work for development).
