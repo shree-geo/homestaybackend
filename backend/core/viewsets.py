@@ -1,6 +1,9 @@
 """
 DRF ViewSets for GrihaStay application
 """
+from uuid import UUID
+
+from django.http import request
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -104,7 +107,7 @@ class TenantViewSet(viewsets.ModelViewSet):
 
 class TenantUserViewSet(viewsets.ModelViewSet):
     queryset = TenantUser.objects.all()
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsTenantUser]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['role', 'is_active']
     search_fields = ['user_name', 'email', 'full_name']
@@ -120,13 +123,12 @@ class TenantUserViewSet(viewsets.ModelViewSet):
         if tenant:
             return TenantUser.objects.filter(tenant=tenant)
         return TenantUser.objects.none()
-    
+
     def get_permissions(self):
-        # Only owners can create, update, or delete users
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAuthenticated(), IsTenantOwner()]
-        return [IsAuthenticated()]
-    
+            return [IsTenantOwner()]
+        return [IsTenantUser()]
+
     def perform_create(self, serializer):
         tenant = get_tenant_from_token(self.request)
         serializer.save(tenant=tenant)
@@ -137,6 +139,11 @@ class TenantUserViewSet(viewsets.ModelViewSet):
         if hasattr(request, 'auth') and request.auth:
             user_id = request.auth.get('user_id')
             if user_id:
+                try:
+                    user_id = UUID(request.auth.get('user_id'))
+                except (TypeError, ValueError):
+                    return Response({'error': 'Invalid user id'}, status=400)
+
                 user = get_object_or_404(TenantUser, id=user_id)
                 serializer = self.get_serializer(user)
                 return Response(serializer.data)
@@ -164,7 +171,7 @@ class AmenityViewSet(viewsets.ModelViewSet):
 class PropertyViewSet(viewsets.ModelViewSet):
     queryset = Property.objects.all()
     serializer_class = PropertySerializer
-    permission_classes = [IsAuthenticated, BelongsToTenant]
+    permission_classes = [BelongsToTenant]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['status', 'property_type', 'state', 'district', 'city', 'community']
     search_fields = ['name', 'description', 'address']
@@ -177,8 +184,7 @@ class PropertyViewSet(viewsets.ModelViewSet):
         return Property.objects.none()
     
     def perform_create(self, serializer):
-        tenant = get_tenant_from_token(self.request)
-        serializer.save(tenant=tenant)
+        serializer.save(tenant=self.request.user.tenant)
 
 
 # ===== Room ViewSets =====
@@ -263,6 +269,8 @@ class InventoryViewSet(viewsets.ModelViewSet):
     ordering_fields = ['dt']
     
     def get_queryset(self):
+        print(">>> get_queryset reached")
+
         tenant = get_tenant_from_token(self.request)
         if tenant:
             return Inventory.objects.filter(room_type__property__tenant=tenant)

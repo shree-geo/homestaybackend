@@ -5,8 +5,21 @@ Mapping from PostgreSQL schema to Django ORM
 import uuid
 from django.contrib.gis.db import models
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
-from django.contrib.auth.hashers import make_password, check_password
 from django.utils import timezone
+
+from .constants import (
+    MEDIA_TYPE_CHOICES,
+    ROLE_CHOICES,
+    PROPERTY_STATUS_CHOICES,
+    ROOM_STATUS_CHOICES,
+    MODIFIER_TYPE_CHOICES,
+    BOOKING_STATUS_CHOICES,
+    PAYMENT_STATUS_CHOICES,
+    PAYMENT_METHOD_CHOICES,
+    DEFAULT_TIMEZONE,
+    DEFAULT_CURRENCY,
+    PRICING_MODEL_STATIC,
+)
 
 
 # ===== Location Models =====
@@ -109,12 +122,6 @@ class Community(models.Model):
 
 
 class CommunityMedia(models.Model):
-    MEDIA_TYPE_CHOICES = [
-        ('IMAGE', 'Image'),
-        ('VIDEO', 'Video'),
-        ('DOCUMENT', 'Document'),
-    ]
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     community = models.ForeignKey(Community, on_delete=models.CASCADE, related_name='media')
     media_name = models.TextField()
@@ -140,8 +147,8 @@ class Tenant(models.Model):
     contact_email = models.TextField(null=True, blank=True)
     contact_phone = models.TextField(null=True, blank=True)
     registration_number = models.TextField(null=True, blank=True)
-    currency = models.CharField(max_length=8, default='NPR')
-    timezone = models.TextField(default='Asia/Kathmandu')
+    currency = models.CharField(max_length=8, default=DEFAULT_CURRENCY)
+    timezone = models.TextField(default=DEFAULT_TIMEZONE)
     locale = models.TextField(default='en')
     plan = models.TextField(default='free')
     created_at = models.DateTimeField(auto_now_add=True)
@@ -171,14 +178,6 @@ class TenantUserManager(BaseUserManager):
 
 
 class TenantUser(AbstractBaseUser, PermissionsMixin):
-    ROLE_CHOICES = [
-        ('OWNER', 'Owner'),
-        ('MANAGER', 'Manager'),
-        ('RECEPTIONIST', 'Receptionist'),
-        ('HOUSEKEEPING', 'Housekeeping'),
-        ('AUDITOR', 'Auditor'),
-    ]
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='users', null=True, blank=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='RECEPTIONIST')
@@ -259,13 +258,6 @@ class Amenity(models.Model):
 # ===== Property Models =====
 
 class Property(models.Model):
-    STATUS_CHOICES = [
-        ('DRAFT', 'Draft'),
-        ('LISTED', 'Listed'),
-        ('UNLISTED', 'Unlisted'),
-        ('SUSPENDED', 'Suspended'),
-    ]
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='properties')
     property_type = models.ForeignKey(PropertyType, on_delete=models.SET_NULL, null=True, blank=True)
@@ -280,9 +272,9 @@ class Property(models.Model):
     lat = models.FloatField(null=True, blank=True)
     lon = models.FloatField(null=True, blank=True)
     geom = models.PointField(null=True, blank=True, srid=4326)
-    timezone = models.TextField(default='Asia/Kathmandu')
+    timezone = models.TextField(default=DEFAULT_TIMEZONE)
     currency = models.CharField(max_length=8, null=True, blank=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
+    status = models.CharField(max_length=20, choices=PROPERTY_STATUS_CHOICES, default='DRAFT')
     amenities = models.ManyToManyField(Amenity, through='PropertyAmenity', related_name='properties')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -326,17 +318,10 @@ class RoomType(models.Model):
 
 
 class Room(models.Model):
-    STATUS_CHOICES = [
-        ('AVAILABLE', 'Available'),
-        ('OCCUPIED', 'Occupied'),
-        ('OUT_OF_SERVICE', 'Out of Service'),
-        ('MAINTENANCE', 'Maintenance'),
-    ]
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     room_type = models.ForeignKey(RoomType, on_delete=models.CASCADE, related_name='rooms')
     room_number = models.TextField(null=True, blank=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='AVAILABLE')
+    status = models.CharField(max_length=20, choices=ROOM_STATUS_CHOICES, default='AVAILABLE')
     price_override = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     currency = models.CharField(max_length=8, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -367,7 +352,7 @@ class RatePlan(models.Model):
     room_type = models.ForeignKey(RoomType, on_delete=models.SET_NULL, null=True, blank=True, related_name='rate_plans')
     name = models.TextField()
     description = models.TextField(null=True, blank=True)
-    pricing_model = models.TextField(default='STATIC')
+    pricing_model = models.TextField(default=PRICING_MODEL_STATIC)
     currency = models.CharField(max_length=8, null=True, blank=True)
     base_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     min_stay = models.IntegerField(default=1)
@@ -384,11 +369,6 @@ class RatePlan(models.Model):
 
 
 class RatePlanRule(models.Model):
-    MODIFIER_TYPE_CHOICES = [
-        ('AMOUNT', 'Amount'),
-        ('PERCENT', 'Percent'),
-    ]
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     rate_plan = models.ForeignKey(RatePlan, on_delete=models.CASCADE, related_name='rules')
     start_date = models.DateField(null=True, blank=True)
@@ -483,22 +463,6 @@ class TenantGuestProfile(models.Model):
 # ===== Booking Models =====
 
 class Booking(models.Model):
-    STATUS_CHOICES = [
-        ('PENDING', 'Pending'),
-        ('CONFIRMED', 'Confirmed'),
-        ('CANCELLED', 'Cancelled'),
-        ('CHECKED_IN', 'Checked In'),
-        ('CHECKED_OUT', 'Checked Out'),
-        ('NO_SHOW', 'No Show'),
-    ]
-
-    PAYMENT_STATUS_CHOICES = [
-        ('PENDING', 'Pending'),
-        ('PAID', 'Paid'),
-        ('FAILED', 'Failed'),
-        ('REFUNDED', 'Refunded'),
-    ]
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     external_id = models.TextField(null=True, blank=True)
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='bookings')
@@ -510,10 +474,10 @@ class Booking(models.Model):
     checkout = models.DateField()
     nights = models.IntegerField()
     guests_count = models.IntegerField(default=1)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    status = models.CharField(max_length=20, choices=BOOKING_STATUS_CHOICES, default='PENDING')
     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='PENDING')
     total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-    currency = models.CharField(max_length=8, default='NPR')
+    currency = models.CharField(max_length=8, default=DEFAULT_CURRENCY)
     commission_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     hold_token = models.TextField(null=True, blank=True)
     created_by_type = models.TextField(default='VISITOR')
@@ -557,27 +521,13 @@ class BookingGuestInfo(models.Model):
 # ===== Payment Models =====
 
 class Payment(models.Model):
-    METHOD_CHOICES = [
-        ('GATEWAY', 'Gateway'),
-        ('OFFLINE', 'Offline'),
-        ('PAY_AT_PROPERTY', 'Pay at Property'),
-        ('WALLET', 'Wallet'),
-    ]
-
-    STATUS_CHOICES = [
-        ('PENDING', 'Pending'),
-        ('PAID', 'Paid'),
-        ('FAILED', 'Failed'),
-        ('REFUNDED', 'Refunded'),
-    ]
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='payments')
     gateway = models.TextField(null=True, blank=True)
-    method = models.CharField(max_length=20, choices=METHOD_CHOICES, default='GATEWAY')
+    method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES, default='GATEWAY')
     amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    currency = models.CharField(max_length=8, default='NPR')
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    currency = models.CharField(max_length=8, default=DEFAULT_CURRENCY)
+    status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='PENDING')
     transaction_id = models.TextField(null=True, blank=True)
     raw_payload = models.JSONField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -606,7 +556,7 @@ class Payout(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='payouts')
     amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    currency = models.CharField(max_length=8, default='NPR')
+    currency = models.CharField(max_length=8, default=DEFAULT_CURRENCY)
     status = models.TextField(default='PENDING')
     scheduled_at = models.DateTimeField(null=True, blank=True)
     processed_at = models.DateTimeField(null=True, blank=True)

@@ -33,6 +33,7 @@ db.sqlite3-journal
 
 # Environment variables
 .env
+docker-compose.yml
 
 # IDE
 .vscode/
