@@ -5,8 +5,13 @@ from uuid import UUID
 
 class IsTenantUser(permissions.BasePermission):
     def has_permission(self, request, view):
-        return bool(request.auth)
+        if not request.user or not request.user.is_authenticated:
+            return False
 
+        if not request.user.is_active:
+            return False
+
+        return True
 
 class IsTenantOwner(permissions.BasePermission):
     def has_permission(self, request, view):
@@ -41,25 +46,22 @@ class IsTenantOwnerOrManager(permissions.BasePermission):
 
 
 class BelongsToTenant(permissions.BasePermission):
-    def has_object_permission(self, request, view, obj):
-        if not request.auth:
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
             return False
+        return bool(request.user.tenant)
 
-        tenant_id = request.auth.get('tenant_id')
-        if not tenant_id:
+    def has_object_permission(self, request, view, obj):
+        tenant = getattr(request.user, 'tenant', None)
+        if not tenant:
             return False
 
         if hasattr(obj, 'tenant'):
-            return str(obj.tenant.id) == tenant_id
-
-        if hasattr(obj, 'tenant_id'):
-            return str(obj.tenant_id) == tenant_id
-
+            return obj.tenant_id == tenant.id
         if hasattr(obj, 'property') and hasattr(obj.property, 'tenant'):
-            return str(obj.property.tenant.id) == tenant_id
-
-        if hasattr(obj, 'room_type') and hasattr(obj.room_type, 'property'):
-            return str(obj.room_type.property.tenant.id) == tenant_id
+            return obj.property.tenant.id == tenant.id
+        if hasattr(obj, 'room_type') and hasattr(obj.room_type, 'property') and hasattr(obj.room_type.property, 'tenant'):
+            return obj.room_type.property.tenant.id == tenant.id
 
         return False
 

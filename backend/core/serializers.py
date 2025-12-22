@@ -79,8 +79,8 @@ class TenantUserSerializer(serializers.ModelSerializer):
         model = TenantUser
         fields = ['id', 'tenant', 'tenant_name', 'role', 'user_name', 'email', 
                   'full_name', 'mobile_number', 'is_active', 'email_verified', 
-                  'mobile_verified', 'last_login_at', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'tenant', 'created_at', 'updated_at', 'last_login_at']
+                  'mobile_verified', 'last_login', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'tenant', 'created_at', 'updated_at', 'last_login']
 
 
 class TenantUserCreateSerializer(serializers.ModelSerializer):
@@ -132,13 +132,14 @@ class TenantRegistrationSerializer(serializers.Serializer):
         )
         
         # Create first user (admin/owner)
-        user = TenantUser.objects.create(
-            tenant=tenant,
-            role='OWNER',
+        user = TenantUser.objects.create_user(
             user_name=validated_data['user_name'],
             email=validated_data['email'],
+            password=validated_data['password'],
             full_name=validated_data['full_name'],
             mobile_number=validated_data.get('mobile_number', ''),
+            tenant=tenant,
+            role='OWNER',
         )
         user.set_password(validated_data['password'])
         user.save()
@@ -147,50 +148,43 @@ class TenantRegistrationSerializer(serializers.Serializer):
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
-    """Custom JWT token serializer that works with TenantUser model"""
     username_field = 'user_name'
-    
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields['user_name'] = serializers.CharField()
-        self.fields['password'] = serializers.CharField(write_only=True)
-        # Remove the default username field if it exists
-        if 'username' in self.fields:
-            del self.fields['username']
-    
+
     def validate(self, attrs):
-        user_name = attrs.get('user_name')
+        # Get username dynamically
+        user_name = attrs.get(self.username_field)
         password = attrs.get('password')
-        
+
+        if not user_name or not password:
+            raise serializers.ValidationError('Must include "user_name" and "password".')
+
         try:
             user = TenantUser.objects.get(user_name=user_name)
         except TenantUser.DoesNotExist:
             raise serializers.ValidationError('Invalid credentials')
-        
+
         if not user.is_active:
             raise serializers.ValidationError('User account is disabled')
-        
+
         if not user.check_password(password):
             raise serializers.ValidationError('Invalid credentials')
-        
+
         # Update last login
         user.update_last_login()
-        
-        # Create token
+
+        # Generate JWT
         from rest_framework_simplejwt.tokens import RefreshToken
-        refresh = RefreshToken()
-        refresh['user_id'] = str(user.id)
+        refresh = RefreshToken.for_user(user)
         refresh['tenant_id'] = str(user.tenant.id)
         refresh['role'] = user.role
         refresh['user_name'] = user.user_name
-        
+
         return {
             'refresh': str(refresh),
             'access': str(refresh.access_token),
             'user': TenantUserSerializer(user).data,
             'tenant': TenantSerializer(user.tenant).data,
         }
-
 
 class TenantApiKeySerializer(serializers.ModelSerializer):
     class Meta:

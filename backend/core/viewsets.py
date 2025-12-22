@@ -3,6 +3,7 @@ DRF ViewSets for GrihaStay application
 """
 from uuid import UUID
 
+from django.http import request
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -170,7 +171,7 @@ class AmenityViewSet(viewsets.ModelViewSet):
 class PropertyViewSet(viewsets.ModelViewSet):
     queryset = Property.objects.all()
     serializer_class = PropertySerializer
-    permission_classes = [IsAuthenticated, BelongsToTenant]
+    permission_classes = [BelongsToTenant]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['status', 'property_type', 'state', 'district', 'city', 'community']
     search_fields = ['name', 'description', 'address']
@@ -183,8 +184,7 @@ class PropertyViewSet(viewsets.ModelViewSet):
         return Property.objects.none()
     
     def perform_create(self, serializer):
-        tenant = get_tenant_from_token(self.request)
-        serializer.save(tenant=tenant)
+        serializer.save(tenant=self.request.user.tenant)
 
 
 # ===== Room ViewSets =====
