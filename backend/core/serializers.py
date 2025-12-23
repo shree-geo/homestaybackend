@@ -253,6 +253,21 @@ class PropertySerializer(serializers.ModelSerializer):
         
         return instance
 
+# ===== House Rules Serializers =====
+
+class HouseRuleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = HouseRule
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+class HouseRuleBulkCreateSerializer(serializers.Serializer):
+    rules = HouseRuleSerializer(many=True)
+
+    def create(self, validated_data):
+        rules_data = validated_data['rules']
+        instances = [HouseRule(**data) for data in rules_data]
+        return HouseRule.objects.bulk_create(instances)
 
 # ===== Room Serializers =====
 

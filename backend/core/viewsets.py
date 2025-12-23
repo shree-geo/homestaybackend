@@ -187,6 +187,62 @@ class PropertyViewSet(viewsets.ModelViewSet):
         serializer.save(tenant=self.request.user.tenant)
 
 
+# ===== House Rules ViewSets =====
+class HouseRuleViewSet(viewsets.ModelViewSet):
+    serializer_class = HouseRuleSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        """
+        Only rules belonging to properties of current tenant
+        """
+        return HouseRule.objects.filter(
+            property__tenant=self.request.user.tenant
+        ).order_by('order')
+
+    def perform_create(self, serializer):
+        property_id = serializer.validated_data['property'].id
+        Property.objects.get(
+            id=property_id,
+            tenant=self.request.user.tenant
+        )
+
+        serializer.save()
+    @action(
+        detail=False,
+        methods=['post'],
+        url_path='bulk-create'
+    )
+    def bulk_create(self, request):
+        serializer = HouseRuleBulkCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        rules = serializer.validated_data['rules']
+
+        for rule in rules:
+            Property.objects.get(
+                id=rule['property'].id,
+                tenant=request.user.tenant
+            )
+
+        instances = serializer.save()
+
+        return Response(
+            HouseRuleSerializer(instances, many=True).data,
+            status=status.HTTP_201_CREATED
+        )
+
+    @action(
+        detail=False,
+        methods=['get'],
+        url_path='by-property/(?P<property_id>[^/.]+)'
+    )
+    def by_property(self, request, property_id=None):
+        rules = self.get_queryset().filter(property_id=property_id)
+        serializer = self.get_serializer(rules, many=True)
+        return Response(serializer.data)
+
+
 # ===== Room ViewSets =====
 
 class RoomTypeViewSet(viewsets.ModelViewSet):
