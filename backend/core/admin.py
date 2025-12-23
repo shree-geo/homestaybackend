@@ -46,14 +46,6 @@ class CommunityAdmin(admin.ModelAdmin):
     search_fields = ['name', 'description']
     list_filter = ['state', 'district', 'municipality']
 
-
-@admin.register(CommunityMedia)
-class CommunityMediaAdmin(admin.ModelAdmin):
-    list_display = ['media_name', 'community', 'media_type', 'media_status', 'created_at']
-    search_fields = ['media_name', 'media_file_name']
-    list_filter = ['media_type', 'media_status', 'community']
-
-
 @admin.register(Tenant)
 class TenantAdmin(admin.ModelAdmin):
     list_display = ['name', 'contact_email', 'contact_phone', 'plan', 'created_at']
