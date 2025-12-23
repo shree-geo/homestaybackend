@@ -186,7 +186,21 @@ class PropertyViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         tenant = get_tenant_from_token(self.request)
         if tenant:
-            return Property.objects.filter(tenant=tenant)
+            return Property.objects.filter(tenant=tenant).select_related(
+                'property_type',
+                'state',
+                'state__country',
+                'district',
+                'district__state',
+                'municipality',
+                'municipality__district',
+                'city',
+                'city__district',
+                'community',
+                'community__state',
+                'community__district',
+                'community__municipality'
+            ).prefetch_related('amenities')
         return Property.objects.none()
     
     def perform_create(self, serializer):
@@ -195,56 +209,85 @@ class PropertyViewSet(viewsets.ModelViewSet):
 
 # ===== House Rules ViewSets =====
 class HouseRuleViewSet(viewsets.ModelViewSet):
+    """Master house rule definitions (global/reusable rules)"""
+    queryset = HouseRule.objects.all()
     serializer_class = HouseRuleSerializer
     permission_classes = [IsAuthenticated]
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['title', 'description']
+
+
+class PropertyHouseRuleViewSet(viewsets.ModelViewSet):
+    """Property-specific house rule associations"""
+    queryset = PropertyHouseRule.objects.all()
+    serializer_class = PropertyHouseRuleSerializer
+    permission_classes = [IsAuthenticated, BelongsToTenant]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ['property', 'house_rule']
+    ordering_fields = ['order']
 
     def get_queryset(self):
-        """
-        Only rules belonging to properties of current tenant
-        """
-        return HouseRule.objects.filter(
-            property__tenant=self.request.user.tenant
-        ).order_by('order')
+        """Only associations for properties owned by current tenant"""
+        tenant = get_tenant_from_token(self.request)
+        if tenant:
+            return PropertyHouseRule.objects.filter(
+                property__tenant=tenant
+            ).select_related('house_rule', 'property').order_by('order')
+        return PropertyHouseRule.objects.none()
 
     def perform_create(self, serializer):
-        property_id = serializer.validated_data['property'].id
-        Property.objects.get(
-            id=property_id,
-            tenant=self.request.user.tenant
-        )
-
+        """Ensure property belongs to tenant before creating association"""
+        property_obj = serializer.validated_data['property']
+        tenant = get_tenant_from_token(self.request)
+        
+        if property_obj.tenant != tenant:
+            return Response(
+                {'error': 'Property not found or does not belong to your tenant'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
         serializer.save()
-    @action(
-        detail=False,
-        methods=['post'],
-        url_path='bulk-create'
-    )
+
+    @action(detail=False, methods=['post'], url_path='bulk-create')
     def bulk_create(self, request):
-        serializer = HouseRuleBulkCreateSerializer(data=request.data)
+        """Create multiple property-house-rule associations at once"""
+        serializer = PropertyHouseRuleBulkCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
+        tenant = get_tenant_from_token(request)
         rules = serializer.validated_data['rules']
 
+        # Verify all properties belong to tenant
         for rule in rules:
-            Property.objects.get(
-                id=rule['property'].id,
-                tenant=request.user.tenant
-            )
+            property_obj = rule['property']
+            if property_obj.tenant != tenant:
+                return Response(
+                    {'error': f'Property {property_obj.id} does not belong to your tenant'}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
 
         instances = serializer.save()
-
         return Response(
-            HouseRuleSerializer(instances, many=True).data,
+            PropertyHouseRuleSerializer(instances, many=True).data,
             status=status.HTTP_201_CREATED
         )
 
-    @action(
-        detail=False,
-        methods=['get'],
-        url_path='by-property/(?P<property_id>[^/.]+)'
-    )
+    @action(detail=False, methods=['get'], url_path='by-property/(?P<property_id>[^/.]+)')
     def by_property(self, request, property_id=None):
-        rules = self.get_queryset().filter(property_id=property_id)
+        """Get all house rules for a specific property"""
+        tenant = get_tenant_from_token(request)
+        if not tenant:
+            return Response([], status=status.HTTP_200_OK)
+        
+        # Verify property belongs to tenant
+        try:
+            property_obj = Property.objects.get(id=property_id, tenant=tenant)
+        except Property.DoesNotExist:
+            return Response(
+                {'error': 'Property not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        rules = self.get_queryset().filter(property=property_obj)
         serializer = self.get_serializer(rules, many=True)
         return Response(serializer.data)
 

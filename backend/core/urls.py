@@ -29,6 +29,7 @@ router.register(r'property-types', PropertyTypeViewSet, basename='property-type'
 router.register(r'amenities', AmenityViewSet, basename='amenity')
 router.register(r'properties', PropertyViewSet, basename='property')
 router.register(r'house-rules', HouseRuleViewSet, basename='house-rule')
+router.register(r'property-house-rules', PropertyHouseRuleViewSet, basename='property-house-rule')
 
 # Room routes
 router.register(r'room-types', RoomTypeViewSet, basename='room-type')

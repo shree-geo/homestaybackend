@@ -81,6 +81,21 @@ class PropertyAdmin(OSMGeoAdmin):
     readonly_fields = ['created_at', 'updated_at']
 
 
+@admin.register(HouseRule)
+class HouseRuleAdmin(admin.ModelAdmin):
+    list_display = ['title', 'is_allowed', 'is_visible_to_guest', 'created_at']
+    search_fields = ['title', 'description']
+    list_filter = ['is_allowed', 'is_visible_to_guest']
+
+
+@admin.register(PropertyHouseRule)
+class PropertyHouseRuleAdmin(admin.ModelAdmin):
+    list_display = ['property', 'house_rule', 'order']
+    search_fields = ['property__name', 'house_rule__title']
+    list_filter = ['property']
+    ordering = ['order']
+
+
 @admin.register(RoomType)
 class RoomTypeAdmin(admin.ModelAdmin):
     list_display = ['name', 'property', 'max_occupancy', 'default_base_price', 'created_at']

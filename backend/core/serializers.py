@@ -237,6 +237,11 @@ class PropertySerializer(mixins.GenericMediaMixin,serializers.ModelSerializer):
         required=False
     )
     property_type_name = serializers.CharField(source='property_type.name', read_only=True)
+    state_detail = StateSerializer(source='state', read_only=True)
+    district_detail = DistrictSerializer(source='district', read_only=True)
+    municipality_detail = MunicipalitySerializer(source='municipality', read_only=True)
+    city_detail = CitySerializer(source='city', read_only=True)
+    community_detail = CommunitySerializer(source='community', read_only=True)
     
     class Meta:
         model = Property
@@ -277,18 +282,42 @@ class PropertySerializer(mixins.GenericMediaMixin,serializers.ModelSerializer):
 # ===== House Rules Serializers =====
 
 class HouseRuleSerializer(serializers.ModelSerializer):
+    """Serializer for master house rule definitions"""
     class Meta:
         model = HouseRule
         fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at']
 
+
+class PropertyHouseRuleSerializer(serializers.ModelSerializer):
+    """Serializer for property-house rule associations"""
+    house_rule_detail = HouseRuleSerializer(source='house_rule', read_only=True)
+    property_name = serializers.CharField(source='property.name', read_only=True)
+    
+    class Meta:
+        model = PropertyHouseRule
+        fields = ['id', 'property', 'property_name', 'house_rule', 'house_rule_detail', 'order']
+        read_only_fields = ['id']
+
+
 class HouseRuleBulkCreateSerializer(serializers.Serializer):
+    """Bulk create house rule master records"""
     rules = HouseRuleSerializer(many=True)
 
     def create(self, validated_data):
         rules_data = validated_data['rules']
         instances = [HouseRule(**data) for data in rules_data]
         return HouseRule.objects.bulk_create(instances)
+
+
+class PropertyHouseRuleBulkCreateSerializer(serializers.Serializer):
+    """Bulk create property-house rule associations"""
+    rules = PropertyHouseRuleSerializer(many=True)
+
+    def create(self, validated_data):
+        rules_data = validated_data['rules']
+        instances = [PropertyHouseRule(**data) for data in rules_data]
+        return PropertyHouseRule.objects.bulk_create(instances)
 
 # ===== Room Serializers =====
 
