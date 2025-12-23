@@ -261,6 +261,25 @@ class Amenity(models.Model):
         return self.name
 
 
+# ===== House Rule Models =====
+class HouseRule(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    title = models.TextField()
+    description = models.TextField(null=True, blank=True)
+    is_allowed = models.BooleanField(default=True)
+    is_visible_to_guest = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'house_rules'
+        verbose_name_plural = 'House Rules'
+
+    def __str__(self):
+        return self.title
+
+
+
 # ===== Property Models =====
 
 class Property(models.Model):
@@ -282,6 +301,11 @@ class Property(models.Model):
     currency = models.CharField(max_length=8, null=True, blank=True)
     status = models.CharField(max_length=20, choices=PROPERTY_STATUS_CHOICES, default='DRAFT')
     amenities = models.ManyToManyField(Amenity, through='PropertyAmenity', related_name='properties')
+    house_rules = models.ManyToManyField(
+        HouseRule,
+        through='PropertyHouseRule',
+        related_name='properties'
+    )
     tags = models.JSONField(default=list, blank=True)
     google_map_url = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -303,31 +327,15 @@ class PropertyAmenity(models.Model):
         db_table = 'property_amenities'
         unique_together = [['property', 'amenity']]
 
-# ===== House Rule Models =====
-
-class HouseRule(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    property = models.ForeignKey(
-        Property,
-        on_delete=models.CASCADE,
-        related_name='house_rules'
-    )
-    title = models.TextField()
-    description = models.TextField(null=True, blank=True)
-    is_allowed = models.BooleanField(default=True)
-    is_visible_to_guest = models.BooleanField(default=True)
+class PropertyHouseRule(models.Model):
+    property = models.ForeignKey(Property, on_delete=models.CASCADE)
+    house_rule = models.ForeignKey(HouseRule, on_delete=models.CASCADE)
     order = models.IntegerField(default=0)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = 'house_rules'
+        db_table = 'property_house_rules'
+        unique_together = [['property', 'house_rule']]
         ordering = ['order']
-        unique_together = [['property', 'title']]
-
-    def __str__(self):
-        return f"{self.title} - {self.property.name}"
-
 
 
 # ===== Room Models =====
