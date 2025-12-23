@@ -242,12 +242,25 @@ class PropertySerializer(mixins.GenericMediaMixin,serializers.ModelSerializer):
     municipality_detail = MunicipalitySerializer(source='municipality', read_only=True)
     city_detail = CitySerializer(source='city', read_only=True)
     community_detail = CommunitySerializer(source='community', read_only=True)
+    house_rules_list = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Property
         fields = '__all__'
         media_fields = ["image"]
         read_only_fields = ['id', 'tenant', 'created_at', 'updated_at']
+    
+    def get_house_rules_list(self, obj):
+        """Get all house rules associated with this property"""
+        property_house_rules = PropertyHouseRule.objects.filter(property=obj).select_related('house_rule').order_by('order')
+        return [{
+            'id': phr.house_rule.id,
+            'title': phr.house_rule.title,
+            'description': phr.house_rule.description,
+            'is_allowed': phr.house_rule.is_allowed,
+            'is_visible_to_guest': phr.house_rule.is_visible_to_guest,
+            'order': phr.order
+        } for phr in property_house_rules]
     
     def create(self, validated_data):
         amenities = validated_data.pop('amenities', [])
