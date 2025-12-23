@@ -70,6 +70,21 @@ class CityViewSet(viewsets.ModelViewSet):
     filterset_fields = ['district']
     search_fields = ['name']
 
+class MultiMediaViewSet(viewsets.ModelViewSet):
+    queryset = Multimedia.objects.all()
+    serializer_class = MultimediaSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        user = getattr(self.request, "user", None)
+        if not (user and user.is_authenticated):
+            return Multimedia.objects.none()
+
+        tenant = get_tenant_from_token(self.request)
+        if tenant:
+            return Multimedia.objects.filter(created_by__tenant=tenant)
+        return Multimedia.objects.none()
+
 
 # ===== Community ViewSets =====
 
@@ -80,15 +95,6 @@ class CommunityViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['state', 'district', 'municipality']
     search_fields = ['name', 'description']
-
-
-class CommunityMediaViewSet(viewsets.ModelViewSet):
-    queryset = CommunityMedia.objects.all()
-    serializer_class = CommunityMediaSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['community', 'media_type', 'media_status']
-
 
 # ===== Tenant & User ViewSets =====
 
@@ -273,15 +279,6 @@ class RoomViewSet(viewsets.ModelViewSet):
         if tenant:
             return Room.objects.filter(room_type__property__tenant=tenant)
         return Room.objects.none()
-
-
-class RoomImageViewSet(viewsets.ModelViewSet):
-    queryset = RoomImage.objects.all()
-    serializer_class = RoomImageSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['room_type']
-
 
 # ===== Rate Plan ViewSets =====
 

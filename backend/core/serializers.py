@@ -4,6 +4,8 @@ DRF Serializers for GrihaStay application
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.gis.geos import Point
+
+from config.utils import mixins
 from .models import *
 
 
@@ -46,22 +48,40 @@ class CitySerializer(serializers.ModelSerializer):
         model = City
         fields = '__all__'
 
+class MultimediaSerializer(serializers.ModelSerializer):
+    created_by = serializers.PrimaryKeyRelatedField(read_only=True)
+    protected = serializers.BooleanField(default=True)
+
+    class Meta:
+        model = Multimedia
+        fields = "__all__"
+
+    def validate(self, data):
+        if self.instance is None and not data.get("file"):
+            raise serializers.ValidationError({
+                "file": "File is required."
+            })
+        return data
+
+    def create(self, validated_data):
+        user = self.context["request"].user
+        if user.is_authenticated:
+            validated_data["created_by"] = user
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        if "file" in validated_data and not validated_data["file"]:
+            raise serializers.ValidationError({"file": "File cannot be empty."})
+        return super().update(instance, validated_data)
 
 # ===== Community Serializers =====
 
-class CommunityMediaSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = CommunityMedia
-        fields = '__all__'
 
-
-class CommunitySerializer(serializers.ModelSerializer):
-    media = CommunityMediaSerializer(many=True, read_only=True)
-    
+class CommunitySerializer(mixins.GenericMediaMixin,serializers.ModelSerializer):
     class Meta:
         model = Community
         fields = '__all__'
-
+        media_fields = ["image"]
 
 # ===== Tenant & User Serializers =====
 
@@ -207,7 +227,7 @@ class AmenitySerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-class PropertySerializer(serializers.ModelSerializer):
+class PropertySerializer(mixins.GenericMediaMixin,serializers.ModelSerializer):
     amenities_list = AmenitySerializer(source='amenities', many=True, read_only=True)
     amenity_ids = serializers.PrimaryKeyRelatedField(
         source='amenities',
@@ -221,6 +241,7 @@ class PropertySerializer(serializers.ModelSerializer):
     class Meta:
         model = Property
         fields = '__all__'
+        media_fields = ["image"]
         read_only_fields = ['id', 'tenant', 'created_at', 'updated_at']
     
     def create(self, validated_data):
@@ -271,14 +292,7 @@ class HouseRuleBulkCreateSerializer(serializers.Serializer):
 
 # ===== Room Serializers =====
 
-class RoomImageSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = RoomImage
-        fields = '__all__'
-
-
 class RoomTypeSerializer(serializers.ModelSerializer):
-    images = RoomImageSerializer(many=True, read_only=True)
     property_name = serializers.CharField(source='property.name', read_only=True)
     
     class Meta:
@@ -287,12 +301,13 @@ class RoomTypeSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
 
 
-class RoomSerializer(serializers.ModelSerializer):
+class RoomSerializer(mixins.GenericMediaMixin, serializers.ModelSerializer):
     room_type_name = serializers.CharField(source='room_type.name', read_only=True)
     
     class Meta:
         model = Room
         fields = '__all__'
+        media_fields = ["image"]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
 
