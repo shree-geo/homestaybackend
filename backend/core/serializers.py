@@ -77,7 +77,7 @@ class TenantUserSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = TenantUser
-        fields = ['id', 'tenant', 'tenant_name', 'role', 'user_name', 'email', 
+        fields = ['id', 'tenant', 'tenant_name', 'role', 'user_name', 'email',
                   'full_name', 'mobile_number', 'is_active', 'email_verified', 
                   'mobile_verified', 'last_login', 'created_at', 'updated_at']
         read_only_fields = ['id', 'tenant', 'created_at', 'updated_at', 'last_login']
@@ -110,7 +110,7 @@ class TenantRegistrationSerializer(serializers.Serializer):
     
     # First user (admin) information
     user_name = serializers.CharField(max_length=255)
-    email = serializers.EmailField()
+    # email = serializers.EmailField()
     password = serializers.CharField(write_only=True, min_length=8)
     full_name = serializers.CharField(max_length=255)
     mobile_number = serializers.CharField(max_length=50, required=False, allow_blank=True)
@@ -134,7 +134,7 @@ class TenantRegistrationSerializer(serializers.Serializer):
         # Create first user (admin/owner)
         user = TenantUser.objects.create_user(
             user_name=validated_data['user_name'],
-            email=validated_data['email'],
+            # email=validated_data['email'],
             password=validated_data['password'],
             full_name=validated_data['full_name'],
             mobile_number=validated_data.get('mobile_number', ''),

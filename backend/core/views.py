@@ -45,7 +45,7 @@ def register_tenant(request):
             'user': {
                 'id': str(user.id),
                 'user_name': user.user_name,
-                'email': user.email,
+                # 'email': user.email,
                 'full_name': user.full_name,
                 'role': user.role,
             },
