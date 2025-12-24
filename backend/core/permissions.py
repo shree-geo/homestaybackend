@@ -80,3 +80,16 @@ class IsOwnerOrReadOnly(permissions.BasePermission):
             return user.role == 'OWNER'
         except TenantUser.DoesNotExist:
             return False
+
+
+class IsSuperAdmin(permissions.BasePermission):
+    """
+    Permission class that only allows superusers (Django admin users).
+    This should be used for sensitive operations like cleanup, system maintenance, etc.
+    """
+    def has_permission(self, request, view):
+        return bool(
+            request.user 
+            and request.user.is_authenticated 
+            and request.user.is_superuser
+        )
