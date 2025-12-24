@@ -514,3 +514,65 @@ class AuditLogSerializer(serializers.ModelSerializer):
         model = AuditLog
         fields = '__all__'
         read_only_fields = ['id', 'created_at']
+
+
+# ===== Media Cleanup Serializers =====
+
+class MediaCleanupRequestSerializer(serializers.Serializer):
+    """
+    Serializer for media cleanup API requests.
+    """
+    grace_period_hours = serializers.IntegerField(
+        default=24,
+        min_value=1,
+        max_value=720,  # Max 30 days
+        help_text="Hours to wait before considering a file orphaned (default: 24)"
+    )
+    dry_run = serializers.BooleanField(
+        default=False,
+        help_text="If true, only preview what would be deleted without actually deleting"
+    )
+    batch_size = serializers.IntegerField(
+        default=100,
+        min_value=1,
+        max_value=1000,
+        help_text="Number of records to process in each batch (default: 100)"
+    )
+
+
+class MediaStatisticsSerializer(serializers.Serializer):
+    """
+    Serializer for media statistics response.
+    """
+    total_media_count = serializers.IntegerField()
+    linked_media_count = serializers.IntegerField()
+    orphaned_media_count = serializers.IntegerField()
+    orphaned_percentage = serializers.FloatField()
+    total_storage_mb = serializers.FloatField()
+    orphaned_storage_mb = serializers.FloatField()
+    media_root = serializers.CharField()
+
+
+class OrphanedMediaIdentifySerializer(serializers.Serializer):
+    """
+    Serializer for orphaned media identification response.
+    """
+    orphaned_count = serializers.IntegerField()
+    orphaned_ids = serializers.ListField(child=serializers.IntegerField())
+    total_size_bytes = serializers.IntegerField()
+    total_size_mb = serializers.FloatField()
+    oldest_orphan = serializers.DateTimeField(allow_null=True)
+    grace_period_hours = serializers.IntegerField()
+
+
+class MediaCleanupResponseSerializer(serializers.Serializer):
+    """
+    Serializer for media cleanup response.
+    """
+    dry_run = serializers.BooleanField()
+    identified_count = serializers.IntegerField()
+    deleted_count = serializers.IntegerField()
+    failed_count = serializers.IntegerField()
+    total_size_freed_mb = serializers.FloatField()
+    errors = serializers.ListField(child=serializers.CharField(), required=False)
+
