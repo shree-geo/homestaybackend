@@ -63,6 +63,9 @@ router.register(r'payouts', PayoutViewSet, basename='payout')
 router.register(r'webhooks', WebhookRegistrationViewSet, basename='webhook')
 router.register(r'audit-logs', AuditLogViewSet, basename='audit-log')
 
+# Admin/System routes
+router.register(r'admin/media-cleanup', MediaCleanupViewSet, basename='media-cleanup')
+
 urlpatterns = [
     # Health check
     path('health/', health_check, name='health-check'),

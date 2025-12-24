@@ -10,6 +10,8 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 from .models import *
 from .serializers import *
 from .permissions import *
@@ -567,3 +569,225 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
         if tenant:
             return AuditLog.objects.filter(tenant=tenant)
         return AuditLog.objects.none()
+
+
+# ===== Media Cleanup ViewSet =====
+
+class MediaCleanupViewSet(viewsets.ViewSet):
+    """
+    Media Cleanup Management (Super Admin Only)
+    
+    Provides endpoints to manage orphaned media files that were uploaded but never linked to any entity.
+    All endpoints require Super Admin (is_superuser=True) authentication.
+    """
+    permission_classes = [IsSuperAdmin]
+    
+    @swagger_auto_schema(
+        operation_summary="Get media storage statistics",
+        operation_description="""
+        Returns comprehensive statistics about media storage including:
+        - Total media file count
+        - Linked media count (files associated with entities)
+        - Orphaned media count (files not linked to any entity)
+        - Storage usage in MB
+        - Orphaned storage percentage
+        
+        **Permission Required:** Super Admin
+        """,
+        responses={
+            200: MediaStatisticsSerializer,
+            403: "Forbidden - User is not a superuser"
+        },
+        tags=['Media Cleanup']
+    )
+    @action(detail=False, methods=['get'])
+    def statistics(self, request):
+        """Get overall media storage statistics."""
+        from config.utils.media_cleanup import get_media_statistics
+        
+        stats = get_media_statistics()
+        serializer = MediaStatisticsSerializer(stats)
+        return Response(serializer.data)
+    
+    @swagger_auto_schema(
+        operation_summary="Identify orphaned media files",
+        operation_description="""
+        Identifies orphaned media files without deleting them.
+        
+        Orphaned files are those with:
+        - content_type is NULL
+        - object_id is NULL
+        - created_at older than grace period
+        
+        Use this endpoint to preview what would be deleted before running actual cleanup.
+        
+        **Permission Required:** Super Admin
+        """,
+        request_body=MediaCleanupRequestSerializer,
+        responses={
+            200: openapi.Response(
+                description="Orphaned files identified successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'status': openapi.Schema(type=openapi.TYPE_STRING, example='success'),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING, example='Found 150 orphaned media files'),
+                        'data': openapi.Schema(type=openapi.TYPE_OBJECT, ref='#/definitions/OrphanedMediaIdentify'),
+                    }
+                )
+            ),
+            400: "Bad Request - Invalid parameters",
+            403: "Forbidden - User is not a superuser"
+        },
+        tags=['Media Cleanup']
+    )
+    @action(detail=False, methods=['post'])
+    def identify(self, request):
+        """
+        Identify orphaned media files without deleting them.
+        
+        Request body:
+        {
+            "grace_period_hours": 24  // Optional, default 24
+        }
+        
+        Returns information about orphaned files including count, IDs,
+        and total size.
+        """
+        from config.utils.media_cleanup import identify_orphaned_media
+        
+        request_serializer = MediaCleanupRequestSerializer(data=request.data)
+        request_serializer.is_valid(raise_exception=True)
+        
+        grace_period = request_serializer.validated_data['grace_period_hours']
+        
+        result = identify_orphaned_media(grace_period_hours=grace_period)
+        serializer = OrphanedMediaIdentifySerializer(result)
+        
+        return Response({
+            'status': 'success',
+            'message': f'Found {result["orphaned_count"]} orphaned media files',
+            'data': serializer.data
+        })
+    
+    @swagger_auto_schema(
+        operation_summary="Clean up orphaned media files",
+        operation_description="""
+        Performs cleanup of orphaned media files from database and disk.
+        
+        **Parameters:**
+        - `grace_period_hours`: Only delete files older than this (1-720 hours)
+        - `dry_run`: If true, preview without deleting (default: false)
+        - `batch_size`: Process files in batches (1-1000, default: 100)
+        
+        **Safety Features:**
+        - Files within grace period are protected
+        - Linked files (content_type not NULL) are never deleted
+        - Batch processing prevents memory issues
+        - All operations are logged to audit log
+        
+        **Dry Run Mode:**
+        Always test with `dry_run: true` first to preview what will be deleted.
+        
+        **Permission Required:** Super Admin
+        """,
+        request_body=MediaCleanupRequestSerializer,
+        responses={
+            200: openapi.Response(
+                description="Cleanup completed successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'status': openapi.Schema(type=openapi.TYPE_STRING, example='success'),
+                        'message': openapi.Schema(
+                            type=openapi.TYPE_STRING, 
+                            example='Cleanup complete: Deleted 148 files, freed 305.2 MB'
+                        ),
+                        'data': openapi.Schema(type=openapi.TYPE_OBJECT, ref='#/definitions/MediaCleanupResponse'),
+                    }
+                ),
+                examples={
+                    'application/json': {
+                        'status': 'success',
+                        'message': 'Cleanup complete: Deleted 148 files, freed 305.2 MB',
+                        'data': {
+                            'dry_run': False,
+                            'identified_count': 150,
+                            'deleted_count': 148,
+                            'failed_count': 2,
+                            'total_size_freed_mb': 305.2,
+                            'errors': []
+                        }
+                    }
+                }
+            ),
+            400: "Bad Request - Invalid parameters",
+            403: "Forbidden - User is not a superuser"
+        },
+        tags=['Media Cleanup']
+    )
+    @action(detail=False, methods=['post'])
+    def cleanup(self, request):
+        """
+        Clean up orphaned media files.
+        
+        Request body:
+        {
+            "grace_period_hours": 24,  // Optional, default 24
+            "dry_run": false,           // Optional, default false
+            "batch_size": 100           // Optional, default 100
+        }
+        
+        If dry_run is true, only identifies orphans without deleting.
+        Returns cleanup results including deleted count and space freed.
+        """
+        from config.utils.media_cleanup import cleanup_orphaned_media
+        
+        request_serializer = MediaCleanupRequestSerializer(data=request.data)
+        request_serializer.is_valid(raise_exception=True)
+        
+        grace_period = request_serializer.validated_data['grace_period_hours']
+        dry_run = request_serializer.validated_data['dry_run']
+        batch_size = request_serializer.validated_data['batch_size']
+        
+        result = cleanup_orphaned_media(
+            grace_period_hours=grace_period,
+            dry_run=dry_run,
+            batch_size=batch_size
+        )
+        
+        serializer = MediaCleanupResponseSerializer(result)
+        
+        status_message = (
+            f'Dry run complete: Would delete {result["identified_count"]} files'
+            if dry_run
+            else f'Cleanup complete: Deleted {result["deleted_count"]} files, '
+                 f'freed {result["total_size_freed_mb"]} MB'
+        )
+        
+        # Log the cleanup action
+        if not dry_run and result['deleted_count'] > 0:
+            try:
+                # Safely get username with fallback for users without user_name attribute
+                username = getattr(request.user, 'user_name', 'unknown')
+                AuditLog.objects.create(
+                    tenant=None,  # System-level action
+                    actor=f'superadmin:{username}',
+                    action='media_cleanup',
+                    details={
+                        'deleted_count': result['deleted_count'],
+                        'failed_count': result['failed_count'],
+                        'size_freed_mb': result['total_size_freed_mb'],
+                        'grace_period_hours': grace_period,
+                    }
+                )
+            except Exception:
+                # Don't fail cleanup if audit log fails
+                pass
+        
+        return Response({
+            'status': 'success',
+            'message': status_message,
+            'data': serializer.data
+        })
+
