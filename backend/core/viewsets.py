@@ -179,32 +179,40 @@ class AmenityViewSet(viewsets.ModelViewSet):
 class PropertyViewSet(viewsets.ModelViewSet):
     queryset = Property.objects.all()
     serializer_class = PropertySerializer
-    permission_classes = [BelongsToTenant]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['status', 'property_type', 'state', 'district', 'city', 'community']
     search_fields = ['name', 'description', 'address']
     ordering_fields = ['name', 'created_at']
-    
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [AllowAny()]
+        return [BelongsToTenant()]
+
     def get_queryset(self):
         tenant = get_tenant_from_token(self.request)
-        if tenant:
-            return Property.objects.filter(tenant=tenant).select_related(
-                'property_type',
-                'state',
-                'state__country',
-                'district',
-                'district__state',
-                'municipality',
-                'municipality__district',
-                'city',
-                'city__district',
-                'community',
-                'community__state',
-                'community__district',
-                'community__municipality'
-            ).prefetch_related('amenities')
-        return Property.objects.none()
-    
+
+        base_qs = Property.objects.select_related(
+            'property_type',
+            'state',
+            'state__country',
+            'district',
+            'district__state',
+            'municipality',
+            'municipality__district',
+            'city',
+            'city__district',
+            'community',
+            'community__state',
+            'community__district',
+            'community__municipality'
+        ).prefetch_related('amenities')
+
+        if not tenant:
+            return base_qs.filter(status='LISTED')
+
+        return base_qs.filter(tenant=tenant)
+
     def perform_create(self, serializer):
         serializer.save(tenant=self.request.user.tenant)
 
