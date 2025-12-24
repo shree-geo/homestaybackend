@@ -46,14 +46,6 @@ class CommunityAdmin(admin.ModelAdmin):
     search_fields = ['name', 'description']
     list_filter = ['state', 'district', 'municipality']
 
-
-@admin.register(CommunityMedia)
-class CommunityMediaAdmin(admin.ModelAdmin):
-    list_display = ['media_name', 'community', 'media_type', 'media_status', 'created_at']
-    search_fields = ['media_name', 'media_file_name']
-    list_filter = ['media_type', 'media_status', 'community']
-
-
 @admin.register(Tenant)
 class TenantAdmin(admin.ModelAdmin):
     list_display = ['name', 'contact_email', 'contact_phone', 'plan', 'created_at']
@@ -87,6 +79,21 @@ class PropertyAdmin(OSMGeoAdmin):
     search_fields = ['name', 'description', 'address']
     list_filter = ['tenant', 'property_type', 'status', 'state', 'district']
     readonly_fields = ['created_at', 'updated_at']
+
+
+@admin.register(HouseRule)
+class HouseRuleAdmin(admin.ModelAdmin):
+    list_display = ['title', 'is_allowed', 'is_visible_to_guest', 'created_at']
+    search_fields = ['title', 'description']
+    list_filter = ['is_allowed', 'is_visible_to_guest']
+
+
+@admin.register(PropertyHouseRule)
+class PropertyHouseRuleAdmin(admin.ModelAdmin):
+    list_display = ['property', 'house_rule', 'order']
+    search_fields = ['property__name', 'house_rule__title']
+    list_filter = ['property']
+    ordering = ['order']
 
 
 @admin.register(RoomType)

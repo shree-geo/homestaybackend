@@ -3,6 +3,9 @@ Django models for GrihaStay application
 Mapping from PostgreSQL schema to Django ORM
 """
 import uuid
+
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
 from django.contrib.gis.db import models
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
 from django.utils import timezone
@@ -21,7 +24,9 @@ from .constants import (
     PRICING_MODEL_STATIC,
 )
 
-
+def get_upload_to(instance, filename):
+    suffix = "protected/" if instance.protected else ""
+    return f"{suffix}{filename}"
 # ===== Location Models =====
 
 class Country(models.Model):
@@ -99,6 +104,26 @@ class City(models.Model):
     def __str__(self):
         return self.name
 
+class Multimedia(models.Model):
+    title = models.CharField(max_length=255)
+    file = models.FileField(upload_to=get_upload_to, max_length=255)
+    field_name = models.CharField(max_length=255, blank=True, null=True)
+    protected = models.BooleanField(default=False)
+    created_by = models.ForeignKey("TenantUser", on_delete=models.PROTECT, null=True, blank=True)
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, blank=True, null=True)
+    object_id = models.UUIDField(blank=True, null=True)
+    content_object = GenericForeignKey("content_type", "object_id")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    def on_delete(self):
+        self.file.delete()
+
+    def __str__(self):
+        return f"Multimedia: {self.title}"
+
+    class Meta:
+        verbose_name = "Multimedia"
+        verbose_name_plural = "Multimedia Files"
 
 # ===== Community Models =====
 
@@ -119,25 +144,6 @@ class Community(models.Model):
 
     def __str__(self):
         return self.name
-
-
-class CommunityMedia(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    community = models.ForeignKey(Community, on_delete=models.CASCADE, related_name='media')
-    media_name = models.TextField()
-    media_file_name = models.TextField()
-    media_type = models.CharField(max_length=20, choices=MEDIA_TYPE_CHOICES, default='IMAGE')
-    media_status = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = 'community_media'
-        verbose_name_plural = 'Community Media'
-
-    def __str__(self):
-        return f"{self.media_name} ({self.community.name})"
-
 
 # ===== Tenant & User Models =====
 
@@ -255,6 +261,25 @@ class Amenity(models.Model):
         return self.name
 
 
+# ===== House Rule Models =====
+class HouseRule(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    title = models.TextField()
+    description = models.TextField(null=True, blank=True)
+    is_allowed = models.BooleanField(default=True)
+    is_visible_to_guest = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'house_rules'
+        verbose_name_plural = 'House Rules'
+
+    def __str__(self):
+        return self.title
+
+
+
 # ===== Property Models =====
 
 class Property(models.Model):
@@ -276,6 +301,13 @@ class Property(models.Model):
     currency = models.CharField(max_length=8, null=True, blank=True)
     status = models.CharField(max_length=20, choices=PROPERTY_STATUS_CHOICES, default='DRAFT')
     amenities = models.ManyToManyField(Amenity, through='PropertyAmenity', related_name='properties')
+    house_rules = models.ManyToManyField(
+        HouseRule,
+        through='PropertyHouseRule',
+        related_name='properties'
+    )
+    tags = models.JSONField(default=list, blank=True)
+    google_map_url = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -294,6 +326,16 @@ class PropertyAmenity(models.Model):
     class Meta:
         db_table = 'property_amenities'
         unique_together = [['property', 'amenity']]
+
+class PropertyHouseRule(models.Model):
+    property = models.ForeignKey(Property, on_delete=models.CASCADE)
+    house_rule = models.ForeignKey(HouseRule, on_delete=models.CASCADE)
+    order = models.IntegerField(default=0)
+
+    class Meta:
+        db_table = 'property_house_rules'
+        unique_together = [['property', 'house_rule']]
+        ordering = ['order']
 
 
 # ===== Room Models =====
@@ -332,17 +374,6 @@ class Room(models.Model):
 
     def __str__(self):
         return f"{self.room_number} - {self.room_type.name}"
-
-
-class RoomImage(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    room_type = models.ForeignKey(RoomType, on_delete=models.CASCADE, related_name='images', null=True, blank=True)
-    url = models.TextField()
-    sort_order = models.IntegerField(default=0)
-
-    class Meta:
-        db_table = 'room_images'
-
 
 # ===== Rate Plans =====
 

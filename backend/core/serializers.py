@@ -4,6 +4,8 @@ DRF Serializers for GrihaStay application
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.gis.geos import Point
+
+from config.utils import mixins
 from .models import *
 
 
@@ -46,22 +48,40 @@ class CitySerializer(serializers.ModelSerializer):
         model = City
         fields = '__all__'
 
+class MultimediaSerializer(serializers.ModelSerializer):
+    created_by = serializers.PrimaryKeyRelatedField(read_only=True)
+    protected = serializers.BooleanField(default=True)
+
+    class Meta:
+        model = Multimedia
+        fields = "__all__"
+
+    def validate(self, data):
+        if self.instance is None and not data.get("file"):
+            raise serializers.ValidationError({
+                "file": "File is required."
+            })
+        return data
+
+    def create(self, validated_data):
+        user = self.context["request"].user
+        if user.is_authenticated:
+            validated_data["created_by"] = user
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        if "file" in validated_data and not validated_data["file"]:
+            raise serializers.ValidationError({"file": "File cannot be empty."})
+        return super().update(instance, validated_data)
 
 # ===== Community Serializers =====
 
-class CommunityMediaSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = CommunityMedia
-        fields = '__all__'
 
-
-class CommunitySerializer(serializers.ModelSerializer):
-    media = CommunityMediaSerializer(many=True, read_only=True)
-    
+class CommunitySerializer(mixins.GenericMediaMixin,serializers.ModelSerializer):
     class Meta:
         model = Community
         fields = '__all__'
-
+        media_fields = ["image"]
 
 # ===== Tenant & User Serializers =====
 
@@ -77,7 +97,7 @@ class TenantUserSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = TenantUser
-        fields = ['id', 'tenant', 'tenant_name', 'role', 'user_name', 'email', 
+        fields = ['id', 'tenant', 'tenant_name', 'role', 'user_name', 'email',
                   'full_name', 'mobile_number', 'is_active', 'email_verified', 
                   'mobile_verified', 'last_login', 'created_at', 'updated_at']
         read_only_fields = ['id', 'tenant', 'created_at', 'updated_at', 'last_login']
@@ -110,7 +130,7 @@ class TenantRegistrationSerializer(serializers.Serializer):
     
     # First user (admin) information
     user_name = serializers.CharField(max_length=255)
-    email = serializers.EmailField()
+    # email = serializers.EmailField()
     password = serializers.CharField(write_only=True, min_length=8)
     full_name = serializers.CharField(max_length=255)
     mobile_number = serializers.CharField(max_length=50, required=False, allow_blank=True)
@@ -134,7 +154,7 @@ class TenantRegistrationSerializer(serializers.Serializer):
         # Create first user (admin/owner)
         user = TenantUser.objects.create_user(
             user_name=validated_data['user_name'],
-            email=validated_data['email'],
+            # email=validated_data['email'],
             password=validated_data['password'],
             full_name=validated_data['full_name'],
             mobile_number=validated_data.get('mobile_number', ''),
@@ -207,7 +227,7 @@ class AmenitySerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-class PropertySerializer(serializers.ModelSerializer):
+class PropertySerializer(mixins.GenericMediaMixin,serializers.ModelSerializer):
     amenities_list = AmenitySerializer(source='amenities', many=True, read_only=True)
     amenity_ids = serializers.PrimaryKeyRelatedField(
         source='amenities',
@@ -217,11 +237,30 @@ class PropertySerializer(serializers.ModelSerializer):
         required=False
     )
     property_type_name = serializers.CharField(source='property_type.name', read_only=True)
+    state_detail = StateSerializer(source='state', read_only=True)
+    district_detail = DistrictSerializer(source='district', read_only=True)
+    municipality_detail = MunicipalitySerializer(source='municipality', read_only=True)
+    city_detail = CitySerializer(source='city', read_only=True)
+    community_detail = CommunitySerializer(source='community', read_only=True)
+    house_rules_list = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Property
         fields = '__all__'
+        media_fields = ["image"]
         read_only_fields = ['id', 'tenant', 'created_at', 'updated_at']
+    
+    def get_house_rules_list(self, obj):
+        """Get all house rules associated with this property"""
+        property_house_rules = PropertyHouseRule.objects.filter(property=obj).select_related('house_rule').order_by('order')
+        return [{
+            'id': phr.house_rule.id,
+            'title': phr.house_rule.title,
+            'description': phr.house_rule.description,
+            'is_allowed': phr.house_rule.is_allowed,
+            'is_visible_to_guest': phr.house_rule.is_visible_to_guest,
+            'order': phr.order
+        } for phr in property_house_rules]
     
     def create(self, validated_data):
         amenities = validated_data.pop('amenities', [])
@@ -253,17 +292,49 @@ class PropertySerializer(serializers.ModelSerializer):
         
         return instance
 
+# ===== House Rules Serializers =====
+
+class HouseRuleSerializer(serializers.ModelSerializer):
+    """Serializer for master house rule definitions"""
+    class Meta:
+        model = HouseRule
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class PropertyHouseRuleSerializer(serializers.ModelSerializer):
+    """Serializer for property-house rule associations"""
+    house_rule_detail = HouseRuleSerializer(source='house_rule', read_only=True)
+    property_name = serializers.CharField(source='property.name', read_only=True)
+    
+    class Meta:
+        model = PropertyHouseRule
+        fields = ['id', 'property', 'property_name', 'house_rule', 'house_rule_detail', 'order']
+        read_only_fields = ['id']
+
+
+class HouseRuleBulkCreateSerializer(serializers.Serializer):
+    """Bulk create house rule master records"""
+    rules = HouseRuleSerializer(many=True)
+
+    def create(self, validated_data):
+        rules_data = validated_data['rules']
+        instances = [HouseRule(**data) for data in rules_data]
+        return HouseRule.objects.bulk_create(instances)
+
+
+class PropertyHouseRuleBulkCreateSerializer(serializers.Serializer):
+    """Bulk create property-house rule associations"""
+    rules = PropertyHouseRuleSerializer(many=True)
+
+    def create(self, validated_data):
+        rules_data = validated_data['rules']
+        instances = [PropertyHouseRule(**data) for data in rules_data]
+        return PropertyHouseRule.objects.bulk_create(instances)
 
 # ===== Room Serializers =====
 
-class RoomImageSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = RoomImage
-        fields = '__all__'
-
-
 class RoomTypeSerializer(serializers.ModelSerializer):
-    images = RoomImageSerializer(many=True, read_only=True)
     property_name = serializers.CharField(source='property.name', read_only=True)
     
     class Meta:
@@ -272,12 +343,13 @@ class RoomTypeSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
 
 
-class RoomSerializer(serializers.ModelSerializer):
+class RoomSerializer(mixins.GenericMediaMixin, serializers.ModelSerializer):
     room_type_name = serializers.CharField(source='room_type.name', read_only=True)
     
     class Meta:
         model = Room
         fields = '__all__'
+        media_fields = ["image"]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
 
@@ -442,3 +514,65 @@ class AuditLogSerializer(serializers.ModelSerializer):
         model = AuditLog
         fields = '__all__'
         read_only_fields = ['id', 'created_at']
+
+
+# ===== Media Cleanup Serializers =====
+
+class MediaCleanupRequestSerializer(serializers.Serializer):
+    """
+    Serializer for media cleanup API requests.
+    """
+    grace_period_hours = serializers.IntegerField(
+        default=24,
+        min_value=1,
+        max_value=720,  # Max 30 days
+        help_text="Hours to wait before considering a file orphaned (default: 24)"
+    )
+    dry_run = serializers.BooleanField(
+        default=False,
+        help_text="If true, only preview what would be deleted without actually deleting"
+    )
+    batch_size = serializers.IntegerField(
+        default=100,
+        min_value=1,
+        max_value=1000,
+        help_text="Number of records to process in each batch (default: 100)"
+    )
+
+
+class MediaStatisticsSerializer(serializers.Serializer):
+    """
+    Serializer for media statistics response.
+    """
+    total_media_count = serializers.IntegerField()
+    linked_media_count = serializers.IntegerField()
+    orphaned_media_count = serializers.IntegerField()
+    orphaned_percentage = serializers.FloatField()
+    total_storage_mb = serializers.FloatField()
+    orphaned_storage_mb = serializers.FloatField()
+    media_root = serializers.CharField()
+
+
+class OrphanedMediaIdentifySerializer(serializers.Serializer):
+    """
+    Serializer for orphaned media identification response.
+    """
+    orphaned_count = serializers.IntegerField()
+    orphaned_ids = serializers.ListField(child=serializers.IntegerField())
+    total_size_bytes = serializers.IntegerField()
+    total_size_mb = serializers.FloatField()
+    oldest_orphan = serializers.DateTimeField(allow_null=True)
+    grace_period_hours = serializers.IntegerField()
+
+
+class MediaCleanupResponseSerializer(serializers.Serializer):
+    """
+    Serializer for media cleanup response.
+    """
+    dry_run = serializers.BooleanField()
+    identified_count = serializers.IntegerField()
+    deleted_count = serializers.IntegerField()
+    failed_count = serializers.IntegerField()
+    total_size_freed_mb = serializers.FloatField()
+    errors = serializers.ListField(child=serializers.CharField(), required=False)
+

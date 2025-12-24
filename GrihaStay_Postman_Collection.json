@@ -247,6 +247,224 @@
       ]
     },
     {
+      "name": "Media Cleanup (Super Admin)",
+      "item": [
+        {
+          "name": "Get Media Statistics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "description": "Super Admin JWT token required"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/media-cleanup/statistics/",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "media-cleanup", "statistics", ""]
+            },
+            "description": "Get overall media storage statistics including total files, orphaned files, and storage usage. **Requires Super Admin (is_superuser=True)**"
+          },
+          "response": [
+            {
+              "name": "Success Response",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+                "url": {
+                  "raw": "{{base_url}}/admin/media-cleanup/statistics/",
+                  "host": ["{{base_url}}"],
+                  "path": ["admin", "media-cleanup", "statistics", ""]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"total_media_count\": 1000,\n  \"linked_media_count\": 850,\n  \"orphaned_media_count\": 150,\n  \"orphaned_percentage\": 15.0,\n  \"total_storage_mb\": 2048.5,\n  \"orphaned_storage_mb\": 307.3,\n  \"media_root\": \"/app/media\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Identify Orphaned Media",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "description": "Super Admin JWT token required"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grace_period_hours\": 48\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/media-cleanup/identify/",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "media-cleanup", "identify", ""]
+            },
+            "description": "Identify orphaned media files without deleting them. Use this to preview what would be deleted. **Requires Super Admin**\n\n**Parameters:**\n- `grace_period_hours` (optional): Only identify files older than this many hours (default: 24, min: 1, max: 720)"
+          },
+          "response": [
+            {
+              "name": "Success Response",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {"key": "Authorization", "value": "Bearer {{access_token}}"},
+                  {"key": "Content-Type", "value": "application/json"}
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"grace_period_hours\": 48\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/admin/media-cleanup/identify/",
+                  "host": ["{{base_url}}"],
+                  "path": ["admin", "media-cleanup", "identify", ""]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"status\": \"success\",\n  \"message\": \"Found 150 orphaned media files\",\n  \"data\": {\n    \"orphaned_count\": 150,\n    \"orphaned_ids\": [1, 2, 3],\n    \"total_size_bytes\": 322122547,\n    \"total_size_mb\": 307.3,\n    \"oldest_orphan\": \"2024-12-20T10:30:00Z\",\n    \"grace_period_hours\": 48\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Cleanup Orphaned Media (Dry Run)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "description": "Super Admin JWT token required"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grace_period_hours\": 48,\n  \"dry_run\": true,\n  \"batch_size\": 100\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/media-cleanup/cleanup/",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "media-cleanup", "cleanup", ""]
+            },
+            "description": "Preview cleanup operation without actually deleting files (dry run mode). **Requires Super Admin**\n\n**Parameters:**\n- `grace_period_hours` (optional): Delete files older than this (default: 24, min: 1, max: 720)\n- `dry_run` (optional): If true, preview only (default: false)\n- `batch_size` (optional): Process files in batches (default: 100, min: 1, max: 1000)"
+          },
+          "response": [
+            {
+              "name": "Dry Run Response",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {"key": "Authorization", "value": "Bearer {{access_token}}"},
+                  {"key": "Content-Type", "value": "application/json"}
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"grace_period_hours\": 48,\n  \"dry_run\": true,\n  \"batch_size\": 100\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/admin/media-cleanup/cleanup/",
+                  "host": ["{{base_url}}"],
+                  "path": ["admin", "media-cleanup", "cleanup", ""]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"status\": \"success\",\n  \"message\": \"Dry run complete: Would delete 150 files\",\n  \"data\": {\n    \"dry_run\": true,\n    \"identified_count\": 150,\n    \"deleted_count\": 0,\n    \"failed_count\": 0,\n    \"total_size_freed_mb\": 0,\n    \"errors\": []\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Cleanup Orphaned Media (Actual)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "description": "Super Admin JWT token required"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grace_period_hours\": 72,\n  \"dry_run\": false,\n  \"batch_size\": 100\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/media-cleanup/cleanup/",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "media-cleanup", "cleanup", ""]
+            },
+            "description": "⚠️ **CAUTION: This will permanently delete orphaned media files!**\n\nPerform actual cleanup of orphaned media files. Always test with dry_run first! **Requires Super Admin**\n\n**Parameters:**\n- `grace_period_hours` (optional): Delete files older than this (default: 24, min: 1, max: 720)\n- `dry_run` (optional): If true, preview only (default: false)\n- `batch_size` (optional): Process files in batches (default: 100, min: 1, max: 1000)\n\n**Safety Features:**\n- Files within grace period are protected\n- Linked files are never deleted\n- Operation is logged to audit log"
+          },
+          "response": [
+            {
+              "name": "Cleanup Success Response",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {"key": "Authorization", "value": "Bearer {{access_token}}"},
+                  {"key": "Content-Type", "value": "application/json"}
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"grace_period_hours\": 72,\n  \"dry_run\": false,\n  \"batch_size\": 100\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/admin/media-cleanup/cleanup/",
+                  "host": ["{{base_url}}"],
+                  "path": ["admin", "media-cleanup", "cleanup", ""]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"status\": \"success\",\n  \"message\": \"Cleanup complete: Deleted 148 files, freed 305.2 MB\",\n  \"data\": {\n    \"dry_run\": false,\n    \"identified_count\": 150,\n    \"deleted_count\": 148,\n    \"failed_count\": 2,\n    \"total_size_freed_mb\": 305.2,\n    \"errors\": [\n      \"Failed to delete file for media: abc-123\",\n      \"Error deleting media xyz-456: Permission denied\"\n    ]\n  }\n}"
+            }
+          ]
+        }
+      ],
+      "description": "Media cleanup endpoints for managing orphaned media files. All endpoints require Super Admin authentication (is_superuser=True).\n\n**Orphaned Files:** Files that were uploaded but never linked to any entity (content_type and object_id are NULL).\n\n**Workflow:**\n1. Get statistics to see orphaned file count\n2. Identify orphans with appropriate grace period\n3. Test with dry_run=true first\n4. Perform actual cleanup with dry_run=false"
+    },
+    {
       "name": "Health Check",
       "request": {
         "method": "GET",

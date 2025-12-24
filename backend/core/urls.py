@@ -16,10 +16,9 @@ router.register(r'states', StateViewSet, basename='state')
 router.register(r'districts', DistrictViewSet, basename='district')
 router.register(r'municipalities', MunicipalityViewSet, basename='municipality')
 router.register(r'cities', CityViewSet, basename='city')
-
+router.register(r'uploads', MultiMediaViewSet, basename='upload')
 # Community routes
 router.register(r'communities', CommunityViewSet, basename='community')
-router.register(r'community-media', CommunityMediaViewSet, basename='community-media')
 
 # Tenant & User routes
 router.register(r'tenants', TenantViewSet, basename='tenant')
@@ -29,11 +28,12 @@ router.register(r'users', TenantUserViewSet, basename='user')
 router.register(r'property-types', PropertyTypeViewSet, basename='property-type')
 router.register(r'amenities', AmenityViewSet, basename='amenity')
 router.register(r'properties', PropertyViewSet, basename='property')
+router.register(r'house-rules', HouseRuleViewSet, basename='house-rule')
+router.register(r'property-house-rules', PropertyHouseRuleViewSet, basename='property-house-rule')
 
 # Room routes
 router.register(r'room-types', RoomTypeViewSet, basename='room-type')
 router.register(r'rooms', RoomViewSet, basename='room')
-router.register(r'room-images', RoomImageViewSet, basename='room-image')
 
 # Rate plan routes
 router.register(r'rate-plans', RatePlanViewSet, basename='rate-plan')
@@ -62,6 +62,9 @@ router.register(r'payouts', PayoutViewSet, basename='payout')
 # Webhook & Audit routes
 router.register(r'webhooks', WebhookRegistrationViewSet, basename='webhook')
 router.register(r'audit-logs', AuditLogViewSet, basename='audit-log')
+
+# Admin/System routes
+router.register(r'admin/media-cleanup', MediaCleanupViewSet, basename='media-cleanup')
 
 urlpatterns = [
     # Health check
