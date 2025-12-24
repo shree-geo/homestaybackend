@@ -9,7 +9,7 @@ import logging
 from datetime import timedelta
 from typing import Dict, List
 from django.conf import settings
-from django.db import transaction
+from django.db import transaction, DatabaseError, IntegrityError
 from django.utils import timezone
 from core.models import Multimedia
 
@@ -44,20 +44,27 @@ def identify_orphaned_media(grace_period_hours: int = 24) -> Dict[str, any]:
         created_at__lt=cutoff_time
     ).order_by('created_at')
     
+    # Use values_list to get IDs efficiently
     orphaned_ids = list(orphaned.values_list('id', flat=True))
     count = len(orphaned_ids)
     
-    # Calculate total size
+    # Calculate total size and find oldest in single pass
     total_size = 0
-    for media in orphaned:
-        if media.file and os.path.exists(media.file.path):
-            try:
-                total_size += os.path.getsize(media.file.path)
-            except OSError:
-                pass
+    oldest_timestamp = None
     
-    oldest = orphaned.first()
-    oldest_timestamp = oldest.created_at if oldest else None
+    # Use iterator() to avoid loading all objects into memory at once
+    for media in orphaned.iterator():
+        if oldest_timestamp is None:
+            oldest_timestamp = media.created_at
+            
+        if media.file:
+            try:
+                file_path = media.file.path
+                if os.path.exists(file_path):
+                    total_size += os.path.getsize(file_path)
+            except (OSError, IOError) as e:
+                # File system errors are non-critical for statistics
+                logger.debug(f"Could not get size for media {media.id}: {e}")
     
     return {
         'orphaned_count': count,
@@ -84,30 +91,36 @@ def delete_media_file(media: Multimedia) -> bool:
     
     try:
         file_path = media.file.path
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            logger.info(f"Deleted file: {file_path}")
-            
-            # Try to remove empty parent directories
-            try:
-                parent_dir = os.path.dirname(file_path)
-                if parent_dir and parent_dir != settings.MEDIA_ROOT:
-                    # Only remove if directory is empty
-                    if not os.listdir(parent_dir):
-                        os.rmdir(parent_dir)
-                        logger.info(f"Removed empty directory: {parent_dir}")
-            except OSError:
-                pass  # Directory not empty or other issue, ignore
-                
+        if not os.path.exists(file_path):
             return True
-    except Exception as e:
+            
+        os.remove(file_path)
+        logger.info(f"Deleted file: {file_path}")
+        
+        # Try to remove empty parent directories (only within MEDIA_ROOT)
+        try:
+            parent_dir = os.path.dirname(file_path)
+            media_root_abs = os.path.abspath(settings.MEDIA_ROOT)
+            parent_dir_abs = os.path.abspath(parent_dir)
+            
+            # Ensure parent directory is within MEDIA_ROOT and is empty
+            if (parent_dir_abs.startswith(media_root_abs) and 
+                parent_dir_abs != media_root_abs and
+                not os.listdir(parent_dir_abs)):
+                os.rmdir(parent_dir_abs)
+                logger.info(f"Removed empty directory: {parent_dir_abs}")
+        except (OSError, IOError) as e:
+            # Directory not empty or permission issue - safe to ignore
+            logger.debug(f"Could not remove directory {parent_dir}: {e}")
+            
+        return True
+    except (OSError, IOError) as e:
         logger.error(f"Failed to delete file for media {media.id}: {str(e)}")
         return False
     
     return True
 
 
-@transaction.atomic
 def cleanup_orphaned_media(
     grace_period_hours: int = 24,
     dry_run: bool = False,
@@ -115,6 +128,10 @@ def cleanup_orphaned_media(
 ) -> Dict[str, any]:
     """
     Clean up orphaned media files from database and disk.
+    
+    NOTE: Transaction safety - file deletion occurs BEFORE database deletion
+    to prevent orphaned files if DB transaction fails. Only DB operations
+    are wrapped in transactions.
     
     Args:
         grace_period_hours: Hours to wait before considering a file orphaned (default: 24)
@@ -150,9 +167,13 @@ def cleanup_orphaned_media(
     )
     
     if dry_run:
-        # Just report what would be deleted
-        for media in orphaned[:10]:  # Show first 10 as sample
+        # Just report what would be deleted (use iterator for efficiency)
+        sample_count = 0
+        for media in orphaned.iterator():
+            if sample_count >= 10:
+                break
             logger.info(f"Would delete: {media.file.name if media.file else 'No file'} (ID: {media.id})")
+            sample_count += 1
         
         return {
             'dry_run': True,
@@ -163,45 +184,62 @@ def cleanup_orphaned_media(
             'errors': [],
         }
     
-    # Process in batches
+    # Process in batches to avoid memory issues with large datasets
     processed = 0
-    while processed < identified_count:
-        batch = orphaned[processed:processed + batch_size]
-        
-        for media in batch:
+    
+    # Use iterator() for efficient batch processing
+    orphaned_batch = orphaned.iterator(chunk_size=batch_size)
+    
+    for media in orphaned_batch:
+        try:
+            # Calculate file size before deletion
+            file_size = 0
+            if media.file:
+                try:
+                    file_path = media.file.path
+                    if os.path.exists(file_path):
+                        file_size = os.path.getsize(file_path)
+                except (OSError, IOError) as e:
+                    logger.warning(f"Could not get size for media {media.id}: {e}")
+            
+            # Delete the physical file FIRST (outside transaction)
+            # This prevents orphaned files if DB transaction rolls back
+            file_deleted = delete_media_file(media)
+            
+            # Delete the database record (wrapped in transaction)
+            media_id = media.id
             try:
-                # Calculate file size before deletion
-                file_size = 0
-                if media.file and os.path.exists(media.file.path):
-                    try:
-                        file_size = os.path.getsize(media.file.path)
-                    except OSError:
-                        pass
-                
-                # Delete the physical file
-                file_deleted = delete_media_file(media)
-                
-                # Delete the database record
-                media_id = media.id
-                media.delete()
-                
-                if file_deleted:
-                    deleted_count += 1
-                    total_size_freed += file_size
-                    logger.info(f"Successfully deleted orphaned media: {media_id}")
-                else:
-                    failed_count += 1
-                    error_msg = f"Failed to delete file for media: {media_id}"
-                    errors.append(error_msg)
-                    logger.warning(error_msg)
-                    
-            except Exception as e:
+                with transaction.atomic():
+                    media.delete()
+            except (DatabaseError, IntegrityError) as e:
+                logger.error(f"Database error deleting media {media_id}: {e}")
                 failed_count += 1
-                error_msg = f"Error deleting media {media.id}: {str(e)}"
+                error_msg = f"Database error for media {media_id}: {str(e)}"
                 errors.append(error_msg)
-                logger.error(error_msg)
+                continue
+            
+            if file_deleted:
+                deleted_count += 1
+                total_size_freed += file_size
+                logger.info(f"Successfully deleted orphaned media: {media_id}")
+            else:
+                failed_count += 1
+                error_msg = f"Failed to delete file for media: {media_id}"
+                errors.append(error_msg)
+                logger.warning(error_msg)
+                
+        except Exception as e:
+            # Catch any unexpected errors to continue processing
+            failed_count += 1
+            error_msg = f"Unexpected error deleting media {media.id}: {str(e)}"
+            errors.append(error_msg)
+            logger.error(error_msg)
         
-        processed += len(batch)
+        processed += 1
+        if processed % batch_size == 0:
+            logger.info(f"Processed {processed}/{identified_count} orphaned media files")
+    
+    if processed > 0:
         logger.info(f"Processed {processed}/{identified_count} orphaned media files")
     
     total_size_freed_mb = round(total_size_freed / (1024 * 1024), 2)
@@ -238,11 +276,12 @@ def get_media_statistics() -> Dict[str, any]:
         object_id__isnull=True
     ).count()
     
-    # Calculate storage size
+    # Calculate storage size efficiently using iterator()
     total_size = 0
     orphaned_size = 0
     
-    for media in Multimedia.objects.all():
+    # Use iterator() to process records efficiently without loading all into memory
+    for media in Multimedia.objects.iterator():
         if media.file:
             try:
                 file_path = media.file.path
@@ -250,10 +289,12 @@ def get_media_statistics() -> Dict[str, any]:
                     size = os.path.getsize(file_path)
                     total_size += size
                     
+                    # Check if this media is orphaned
                     if not media.content_type and not media.object_id:
                         orphaned_size += size
-            except Exception:
-                pass
+            except (OSError, IOError) as e:
+                # File system errors are non-critical for statistics
+                logger.debug(f"Could not get size for media {media.id}: {e}")
     
     return {
         'total_media_count': total_media,

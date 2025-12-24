@@ -768,9 +768,11 @@ class MediaCleanupViewSet(viewsets.ViewSet):
         # Log the cleanup action
         if not dry_run and result['deleted_count'] > 0:
             try:
+                # Safely get username with fallback for users without user_name attribute
+                username = getattr(request.user, 'user_name', 'unknown')
                 AuditLog.objects.create(
                     tenant=None,  # System-level action
-                    actor=f'superadmin:{request.user.user_name}',
+                    actor=f'superadmin:{username}',
                     action='media_cleanup',
                     details={
                         'deleted_count': result['deleted_count'],
@@ -780,7 +782,8 @@ class MediaCleanupViewSet(viewsets.ViewSet):
                     }
                 )
             except Exception:
-                pass  # Don't fail cleanup if audit log fails
+                # Don't fail cleanup if audit log fails
+                pass
         
         return Response({
             'status': 'success',
