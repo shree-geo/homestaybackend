@@ -236,6 +236,14 @@ class PropertySerializer(mixins.GenericMediaMixin,serializers.ModelSerializer):
         write_only=True,
         required=False
     )
+    house_rule_ids = serializers.PrimaryKeyRelatedField(
+        source='house_rules',
+        many=True,
+        queryset=HouseRule.objects.all(),
+        write_only=True,
+        required=False
+    )
+
     property_type_name = serializers.CharField(source='property_type.name', read_only=True)
     state_detail = StateSerializer(source='state', read_only=True)
     district_detail = DistrictSerializer(source='district', read_only=True)
@@ -247,50 +255,49 @@ class PropertySerializer(mixins.GenericMediaMixin,serializers.ModelSerializer):
     class Meta:
         model = Property
         fields = '__all__'
-        media_fields = ["image"]
+        media_fields = ["image","additional_images"]
         read_only_fields = ['id', 'tenant', 'created_at', 'updated_at']
-    
+
     def get_house_rules_list(self, obj):
-        """Get all house rules associated with this property"""
-        property_house_rules = PropertyHouseRule.objects.filter(property=obj).select_related('house_rule').order_by('order')
-        return [{
-            'id': phr.house_rule.id,
-            'title': phr.house_rule.title,
-            'description': phr.house_rule.description,
-            'is_allowed': phr.house_rule.is_allowed,
-            'is_visible_to_guest': phr.house_rule.is_visible_to_guest,
-            'order': phr.order
-        } for phr in property_house_rules]
-    
+        qs = PropertyHouseRule.objects.filter(property=obj).select_related('house_rule').order_by('order')
+        return PropertyHouseRuleSerializer(qs, many=True).data
+
     def create(self, validated_data):
         amenities = validated_data.pop('amenities', [])
-        property_obj = Property.objects.create(**validated_data)
-        property_obj.amenities.set(amenities)
-        
-        # Set geom from lat/lon if provided
-        if property_obj.lat and property_obj.lon:
-            property_obj.geom = Point(property_obj.lon, property_obj.lat)
-            property_obj.save()
-        
-        return property_obj
-    
+        house_rules = validated_data.pop('house_rules', [])
+
+        instance = super().create(validated_data)
+
+        if amenities:
+            instance.amenities.set(amenities)
+
+        if house_rules:
+            instance.house_rules.set(house_rules)
+
+        if instance.lat and instance.lon:
+            instance.geom = Point(instance.lon, instance.lat)
+            instance.save()
+
+        return instance
+
     def update(self, instance, validated_data):
         amenities = validated_data.pop('amenities', None)
-        
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        
-        # Update geom from lat/lon if changed
-        if 'lat' in validated_data or 'lon' in validated_data:
-            if instance.lat and instance.lon:
-                instance.geom = Point(instance.lon, instance.lat)
-        
-        instance.save()
-        
+        house_rules = validated_data.pop('house_rules', None)
+
+        instance = super().update(instance, validated_data)
+
         if amenities is not None:
             instance.amenities.set(amenities)
-        
+
+        if house_rules is not None:
+            instance.house_rules.set(house_rules)
+
+        if instance.lat and instance.lon:
+            instance.geom = Point(instance.lon, instance.lat)
+            instance.save()
+
         return instance
+
 
 # ===== House Rules Serializers =====
 
