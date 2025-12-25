@@ -352,7 +352,9 @@ class RoomTypeSerializer(serializers.ModelSerializer):
 
 class RoomSerializer(mixins.GenericMediaMixin, serializers.ModelSerializer):
     room_type_name = serializers.CharField(source='room_type.name', read_only=True)
-    
+    room_type_description = serializers.CharField( source='room_type.description', read_only=True)
+    room_type_max_occupancy = serializers.IntegerField( source='room_type.max_occupancy', read_only=True )
+
     class Meta:
         model = Room
         fields = '__all__'
