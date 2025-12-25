@@ -318,6 +318,30 @@ class RoomTypeViewSet(viewsets.ModelViewSet):
             return RoomType.objects.filter(property__tenant=tenant)
         return RoomType.objects.none()
 
+    @action(detail=False, methods=['get'], url_path='by-property/(?P<property_id>[^/.]+)')
+    def by_property(self, request, property_id=None):
+        tenant = get_tenant_from_token(request)
+
+        if not tenant:
+            return Response([], status=status.HTTP_200_OK)
+
+        try:
+            Property.objects.get(id=property_id, tenant=tenant)
+        except Property.DoesNotExist:
+            return Response(
+                {'error': 'Property not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        queryset = self.get_queryset().filter(property_id=property_id)
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
 class RoomViewSet(viewsets.ModelViewSet):
     queryset = Room.objects.all()
@@ -332,6 +356,27 @@ class RoomViewSet(viewsets.ModelViewSet):
         if tenant:
             return Room.objects.filter(room_type__property__tenant=tenant)
         return Room.objects.none()
+
+    @action(detail=False, methods=['get'], url_path='by-property/(?P<property_id>[^/.]+)')
+    def by_property(self, request, property_id=None):
+        tenant = get_tenant_from_token(request)
+
+        if not tenant:
+            return Response([], status=status.HTTP_200_OK)
+
+        queryset = Room.objects.filter(
+            room_type__property_id=property_id,
+            room_type__property__tenant=tenant
+        ).select_related('room_type')
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
 
 # ===== Rate Plan ViewSets =====
 
