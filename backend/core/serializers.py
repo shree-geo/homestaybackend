@@ -1,12 +1,14 @@
 """
 DRF Serializers for GrihaStay application
 """
+from django.db import transaction
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.gis.geos import Point
 
 from config.utils import mixins
 from .models import *
+from .utils import has_overlapping_booking
 
 
 # ===== Location Serializers =====
@@ -435,48 +437,81 @@ class BookingGuestInfoSerializer(serializers.ModelSerializer):
 
 
 class BookingSerializer(serializers.ModelSerializer):
-    items = BookingItemSerializer(many=True, read_only=True)
     guest_info = BookingGuestInfoSerializer(many=True, read_only=True)
-    property_name = serializers.CharField(source='property.name', read_only=True)
-    room_type_name = serializers.CharField(source='room_type.name', read_only=True)
-    
+    property_detail = PropertySerializer(source='property', read_only=True)
+    guest_name = serializers.CharField(write_only=True)
+    guest_email = serializers.EmailField(write_only=True, required=False, allow_blank=True)
+    guest_phone = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    guest_nationality = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
     class Meta:
         model = Booking
-        fields = '__all__'
-        read_only_fields = ['id', 'tenant', 'created_at', 'updated_at']
-    
+        fields = [
+            'id', 'tenant', 'property', 'property_detail', 'room_type', 'room',
+            'source', 'checkin', 'checkout', 'nights', 'guests_count',
+            'status', 'payment_status', 'total_amount', 'currency',
+            'guest_info',
+            'guest_name', 'guest_email', 'guest_phone', 'guest_nationality',
+        ]
+        read_only_fields = ['id', 'tenant', 'nights', 'status', 'payment_status', 'property', 'room_type']
+
     def validate(self, data):
-        if data.get('checkout') and data.get('checkin'):
-            if data['checkout'] <= data['checkin']:
-                raise serializers.ValidationError("Checkout date must be after checkin date")
-            
-            # Calculate nights
-            delta = data['checkout'] - data['checkin']
-            data['nights'] = delta.days
-        
+        if data['checkout'] <= data['checkin']:
+            raise serializers.ValidationError("Checkout must be after checkin")
         return data
+
+    def create(self, validated_data):
+        guest_name = validated_data.pop('guest_name')
+        guest_email = validated_data.pop('guest_email', '')
+        guest_phone = validated_data.pop('guest_phone', '')
+        guest_nationality = validated_data.pop('guest_nationality', '')
+
+        room = validated_data['room']
+        if has_overlapping_booking(room, validated_data['checkin'], validated_data['checkout']):
+            raise serializers.ValidationError({"detail": "Room is not available for selected dates"})
+
+        room_type = room.room_type
+        property_obj = room_type.property
+        tenant = property_obj.tenant
+
+        validated_data['room_type'] = room_type
+        validated_data['property'] = property_obj
+        validated_data['tenant'] = tenant
+        validated_data['nights'] = (validated_data['checkout'] - validated_data['checkin']).days
+
+        with transaction.atomic():
+            room.status = 'BOOKED'
+            room.save(update_fields=['status'])
+
+            booking = Booking.objects.create(**validated_data)
+
+            BookingGuestInfo.objects.create(
+                booking=booking,
+                name=guest_name,
+                email=guest_email,
+                phone=guest_phone,
+                nationality=guest_nationality,
+                is_primary=True
+            )
+
+        return booking
 
 
 class BookingCreateSerializer(serializers.Serializer):
-    """Serializer for creating a booking with guest info"""
-    property_id = serializers.UUIDField()
-    room_type_id = serializers.UUIDField()
-    room_id = serializers.UUIDField(required=False, allow_null=True)
+    room = serializers.UUIDField(required=True)
     checkin = serializers.DateField()
     checkout = serializers.DateField()
     guests_count = serializers.IntegerField(default=1)
     source = serializers.CharField(default='MARKETPLACE')
-    
-    # Guest information
+
     guest_name = serializers.CharField()
     guest_email = serializers.EmailField(required=False, allow_blank=True)
     guest_phone = serializers.CharField(required=False, allow_blank=True)
     guest_nationality = serializers.CharField(required=False, allow_blank=True)
-    
-    # Payment information
+
     total_amount = serializers.DecimalField(max_digits=12, decimal_places=2)
     currency = serializers.CharField(default='NPR')
-    
+
     def validate(self, data):
         if data['checkout'] <= data['checkin']:
             raise serializers.ValidationError("Checkout must be after checkin")
@@ -534,7 +569,7 @@ class MediaCleanupRequestSerializer(serializers.Serializer):
     grace_period_hours = serializers.IntegerField(
         default=24,
         min_value=1,
-        max_value=720,  # Max 30 days
+        max_value=720,
         help_text="Hours to wait before considering a file orphaned (default: 24)"
     )
     dry_run = serializers.BooleanField(

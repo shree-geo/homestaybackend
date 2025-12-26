@@ -3,6 +3,7 @@ DRF ViewSets for GrihaStay application
 """
 from uuid import UUID
 
+from django.db import transaction
 from django.http import request
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
@@ -15,6 +16,7 @@ from drf_yasg import openapi
 from .models import *
 from .serializers import *
 from .permissions import *
+from .utils import has_overlapping_booking
 
 
 def get_tenant_from_token(request):
@@ -307,11 +309,15 @@ class PropertyHouseRuleViewSet(viewsets.ModelViewSet):
 class RoomTypeViewSet(viewsets.ModelViewSet):
     queryset = RoomType.objects.all()
     serializer_class = RoomTypeSerializer
-    permission_classes = [IsAuthenticated, BelongsToTenant]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['property']
     search_fields = ['name', 'description']
-    
+
+    def get_permissions(self):
+        if self.request.method in permissions.SAFE_METHODS:
+            return [permissions.AllowAny()]
+        return [permissions.IsAuthenticated(), BelongsToTenant()]
+
     def get_queryset(self):
         tenant = get_tenant_from_token(self.request)
         if tenant:
@@ -346,27 +352,32 @@ class RoomTypeViewSet(viewsets.ModelViewSet):
 class RoomViewSet(viewsets.ModelViewSet):
     queryset = Room.objects.all()
     serializer_class = RoomSerializer
-    permission_classes = [IsAuthenticated, BelongsToTenant]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['room_type', 'status']
     search_fields = ['room_number']
-    
+
+    def get_permissions(self):
+        if self.request.method in permissions.SAFE_METHODS:
+            return [permissions.AllowAny()]
+        return [permissions.IsAuthenticated(), BelongsToTenant()]
+
     def get_queryset(self):
+        if self.request.method in permissions.SAFE_METHODS:
+            return Room.objects.filter(status='AVAILABLE')
+
         tenant = get_tenant_from_token(self.request)
         if tenant:
-            return Room.objects.filter(room_type__property__tenant=tenant)
+            return Room.objects.filter(
+                room_type__property__tenant=tenant
+            )
+
         return Room.objects.none()
 
     @action(detail=False, methods=['get'], url_path='by-property/(?P<property_id>[^/.]+)')
     def by_property(self, request, property_id=None):
-        tenant = get_tenant_from_token(request)
-
-        if not tenant:
-            return Response([], status=status.HTTP_200_OK)
-
         queryset = Room.objects.filter(
             room_type__property_id=property_id,
-            room_type__property__tenant=tenant
+            status='AVAILABLE'
         ).select_related('room_type')
 
         page = self.paginate_queryset(queryset)
@@ -469,75 +480,80 @@ class TenantGuestProfileViewSet(viewsets.ModelViewSet):
 class BookingViewSet(viewsets.ModelViewSet):
     queryset = Booking.objects.all()
     serializer_class = BookingSerializer
-    permission_classes = [IsAuthenticated, BelongsToTenant]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['property', 'room_type', 'status', 'payment_status', 'source']
-    search_fields = ['external_id']
-    ordering_fields = ['checkin', 'checkout', 'created_at']
-    
+
+    def get_permissions(self):
+        if self.action == 'create':
+            return [permissions.AllowAny()]
+        return [permissions.IsAuthenticated(), BelongsToTenant()]
+
     def get_queryset(self):
         tenant = get_tenant_from_token(self.request)
         if tenant:
             return Booking.objects.filter(tenant=tenant)
         return Booking.objects.none()
-    
-    def perform_create(self, serializer):
-        tenant = get_tenant_from_token(self.request)
-        user_id = self.request.auth.get('user_id') if hasattr(self.request, 'auth') else None
-        serializer.save(tenant=tenant, created_by_id=user_id, created_by_type='TENANT_USER')
-    
-    @action(detail=True, methods=['post'])
-    def confirm(self, request, pk=None):
-        """Confirm a booking"""
-        booking = self.get_object()
-        booking.status = 'CONFIRMED'
-        booking.save()
-        serializer = self.get_serializer(booking)
-        return Response(serializer.data)
-    
-    @action(detail=True, methods=['post'])
-    def cancel(self, request, pk=None):
-        """Cancel a booking"""
-        booking = self.get_object()
-        booking.status = 'CANCELLED'
-        booking.save()
-        serializer = self.get_serializer(booking)
-        return Response(serializer.data)
-    
+
     @action(detail=True, methods=['post'])
     def checkin(self, request, pk=None):
-        """Check in a booking"""
         booking = self.get_object()
         booking.status = 'CHECKED_IN'
-        booking.save()
-        serializer = self.get_serializer(booking)
-        return Response(serializer.data)
-    
+        booking.save(update_fields=['status'])
+        if booking.room:
+            booking.room.status = 'OCCUPIED'
+            booking.room.save(update_fields=['status'])
+        return Response(self.get_serializer(booking).data)
+
     @action(detail=True, methods=['post'])
     def checkout(self, request, pk=None):
-        """Check out a booking"""
         booking = self.get_object()
         booking.status = 'CHECKED_OUT'
-        booking.save()
-        serializer = self.get_serializer(booking)
-        return Response(serializer.data)
+        booking.save(update_fields=['status'])
+        if booking.room:
+            booking.room.status = 'AVAILABLE'
+            booking.room.save(update_fields=['status'])
+        return Response(self.get_serializer(booking).data)
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        booking = self.get_object()
+        booking.status = 'CANCELLED'
+        booking.save(update_fields=['status'])
+        if booking.room:
+            booking.room.status = 'AVAILABLE'
+            booking.room.save(update_fields=['status'])
+        return Response(self.get_serializer(booking).data)
 
 
 class BookingItemViewSet(viewsets.ModelViewSet):
     queryset = BookingItem.objects.all()
     serializer_class = BookingItemSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, BelongsToTenant]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['booking']
 
 
 class BookingGuestInfoViewSet(viewsets.ModelViewSet):
-    queryset = BookingGuestInfo.objects.all()
     serializer_class = BookingGuestInfoSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['booking', 'is_primary']
+    permission_classes = [permissions.AllowAny]
 
+    def get_queryset(self):
+        booking_id = self.request.query_params.get("booking")
+        hold_token = self.request.query_params.get("hold_token")
+
+        return BookingGuestInfo.objects.filter(
+            booking_id=booking_id,
+            booking__hold_token=hold_token
+        )
+
+    def perform_create(self, serializer):
+        booking_id = self.request.data.get("booking")
+        hold_token = self.request.data.get("hold_token")
+
+        booking = Booking.objects.get(
+            id=booking_id,
+            hold_token=hold_token
+        )
+
+        serializer.save(booking=booking)
 
 # ===== Payment ViewSets =====
 
