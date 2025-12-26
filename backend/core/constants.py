@@ -74,3 +74,9 @@ __all__ = [
     'DEFAULT_CURRENCY',
     'PRICING_MODEL_STATIC',
 ]
+
+ACTIVE_BOOKING_STATUSES = [
+    "PENDING",
+    "CONFIRMED",
+    "CHECKED_IN",
+]
