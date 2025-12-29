@@ -1,10 +1,6 @@
 """
 DRF ViewSets for GrihaStay application
 """
-from uuid import UUID
-
-from django.db import transaction
-from django.http import request
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -13,10 +9,8 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-from .models import *
 from .serializers import *
 from .permissions import *
-from .utils import has_overlapping_booking
 
 
 def get_tenant_from_token(request):

@@ -484,7 +484,7 @@ class BookingSerializer(serializers.ModelSerializer):
         validated_data['nights'] = (validated_data['checkout'] - validated_data['checkin']).days
 
         with transaction.atomic():
-            room.status = 'BOOKED'
+            room.status = 'OCCUPIED'
             room.save(update_fields=['status'])
 
             booking = Booking.objects.create(**validated_data)
