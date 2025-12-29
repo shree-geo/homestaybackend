@@ -7,6 +7,7 @@ from .models import Property, Booking
 class PropertyAvailabilityFilter(django_filters.FilterSet):
     checkin = django_filters.DateFilter(method='filter_available_rooms')
     checkout = django_filters.DateFilter(method='filter_available_rooms')
+    city_name = django_filters.CharFilter(field_name='city__name', lookup_expr='icontains')
 
     class Meta:
         model = Property
