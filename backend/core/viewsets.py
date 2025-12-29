@@ -9,6 +9,8 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
+
+from .filters import PropertyAvailabilityFilter
 from .serializers import *
 from .permissions import *
 from rest_framework import status as drf_status
@@ -177,7 +179,7 @@ class PropertyViewSet(viewsets.ModelViewSet):
     queryset = Property.objects.all()
     serializer_class = PropertySerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['status', 'property_type', 'state', 'district', 'city', 'community']
+    filterset_class = PropertyAvailabilityFilter
     search_fields = ['name', 'description', 'address']
     ordering_fields = ['name', 'created_at']
 
@@ -186,29 +188,27 @@ class PropertyViewSet(viewsets.ModelViewSet):
             return [AllowAny()]
         return [BelongsToTenant()]
 
+
     def get_queryset(self):
         tenant = get_tenant_from_token(self.request)
 
-        base_qs = Property.objects.select_related(
+        qs = Property.objects.select_related(
             'property_type',
             'state',
-            'state__country',
             'district',
-            'district__state',
             'municipality',
-            'municipality__district',
             'city',
-            'city__district',
-            'community',
-            'community__state',
-            'community__district',
-            'community__municipality'
-        ).prefetch_related('amenities')
+            'community'
+        ).prefetch_related(
+            'amenities',
+            'room_types',
+            'room_types__rooms'
+        )
 
-        if not tenant:
-            return base_qs.filter(status='LISTED')
+        if tenant:
+            return qs.filter(tenant=tenant)
 
-        return base_qs.filter(tenant=tenant)
+        return qs.filter(status='LISTED')
 
     def perform_create(self, serializer):
         serializer.save(tenant=self.request.user.tenant)

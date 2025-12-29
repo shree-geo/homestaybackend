@@ -37,7 +37,7 @@ class Command(BaseCommand):
 
             # Nepal provinces (7) - keep as fallback in case JSON not provided
             provinces = [
-                'Province No. 1',
+                'Koshi Province',
                 'Madhesh Province',
                 'Bagmati Province',
                 'Gandaki Province',

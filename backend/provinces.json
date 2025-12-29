@@ -2,8 +2,8 @@
     {
         "id": 1,
         "pid": 1,
-        "title": "प्रदेश १",
-        "title_en": "Province 1",
+        "title": "कोशी प्रदेश",
+        "title_en": "Koshi Province",
         "offices": [],
         "districts": [
             {
@@ -3746,7 +3746,7 @@
         "id": 5,
         "pid": 5,
         "title": "लुम्बिनी प्रदेश",
-        "title_en": "Lumbin Province",
+        "title_en": "Lumbini Province",
         "offices": [],
         "districts": [
             {
