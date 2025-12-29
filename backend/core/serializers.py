@@ -471,6 +471,7 @@ class BookingSerializer(serializers.ModelSerializer):
         guest_nationality = validated_data.pop('guest_nationality', '')
 
         room = validated_data['room']
+
         if has_overlapping_booking(room, validated_data['checkin'], validated_data['checkout']):
             raise serializers.ValidationError({"detail": "Room is not available for selected dates"})
 
@@ -478,15 +479,15 @@ class BookingSerializer(serializers.ModelSerializer):
         property_obj = room_type.property
         tenant = property_obj.tenant
 
-        validated_data['room_type'] = room_type
-        validated_data['property'] = property_obj
-        validated_data['tenant'] = tenant
-        validated_data['nights'] = (validated_data['checkout'] - validated_data['checkin']).days
+        validated_data.update({
+            'room_type': room_type,
+            'property': property_obj,
+            'tenant': tenant,
+            'nights': (validated_data['checkout'] - validated_data['checkin']).days,
+            'status': 'PENDING'
+        })
 
         with transaction.atomic():
-            room.status = 'OCCUPIED'
-            room.save(update_fields=['status'])
-
             booking = Booking.objects.create(**validated_data)
 
             BookingGuestInfo.objects.create(

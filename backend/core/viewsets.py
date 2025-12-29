@@ -11,6 +11,7 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from .serializers import *
 from .permissions import *
+from rest_framework import status as drf_status
 
 
 def get_tenant_from_token(request):
@@ -494,33 +495,76 @@ class BookingViewSet(viewsets.ModelViewSet):
         return Booking.objects.none()
 
     @action(detail=True, methods=['post'])
+    def confirm(self, request, pk=None):
+        booking = self.get_object()
+
+        if booking.status != 'PENDING':
+            return Response(
+                {"detail": "Only pending bookings can be confirmed"},
+                status=drf_status.HTTP_400_BAD_REQUEST
+            )
+
+        booking.status = 'CONFIRMED'
+        booking.save(update_fields=['status'])
+
+        return Response(self.get_serializer(booking).data)
+
+    @action(detail=True, methods=['post'])
     def checkin(self, request, pk=None):
         booking = self.get_object()
-        booking.status = 'CHECKED_IN'
-        booking.save(update_fields=['status'])
-        if booking.room:
+
+        if booking.status != 'CONFIRMED':
+            return Response(
+                {"detail": "Only confirmed bookings can be checked in"},
+                status=drf_status.HTTP_400_BAD_REQUEST
+            )
+
+        with transaction.atomic():
+            booking.status = 'CHECKED_IN'
+            booking.save(update_fields=['status'])
+
             booking.room.status = 'OCCUPIED'
             booking.room.save(update_fields=['status'])
+
         return Response(self.get_serializer(booking).data)
 
     @action(detail=True, methods=['post'])
     def checkout(self, request, pk=None):
         booking = self.get_object()
-        booking.status = 'CHECKED_OUT'
-        booking.save(update_fields=['status'])
-        if booking.room:
+
+        if booking.status != 'CHECKED_IN':
+            return Response(
+                {"detail": "Only checked-in bookings can be checked out"},
+                status=drf_status.HTTP_400_BAD_REQUEST
+            )
+
+        with transaction.atomic():
+            booking.status = 'CHECKED_OUT'
+            booking.save(update_fields=['status'])
+
             booking.room.status = 'AVAILABLE'
             booking.room.save(update_fields=['status'])
+
         return Response(self.get_serializer(booking).data)
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
         booking = self.get_object()
-        booking.status = 'CANCELLED'
-        booking.save(update_fields=['status'])
-        if booking.room:
+
+        if booking.status not in ['PENDING', 'CONFIRMED']:
+            return Response(
+                {"detail": "Only pending or confirmed bookings can be cancelled"},
+                status=drf_status.HTTP_400_BAD_REQUEST
+            )
+
+        with transaction.atomic():
+            booking.status = 'CANCELLED'
+            booking.save(update_fields=['status'])
+
+            # Room stays AVAILABLE (since not checked in)
             booking.room.status = 'AVAILABLE'
             booking.room.save(update_fields=['status'])
+
         return Response(self.get_serializer(booking).data)
 
 
