@@ -71,6 +71,23 @@ class CityViewSet(viewsets.ModelViewSet):
     filterset_fields = ['district']
     search_fields = ['name']
 
+    def list(self, request, *args, **kwargs):
+        page_param = request.query_params.get('page')
+        limit_param = request.query_params.get('limit')
+
+        queryset = self.filter_queryset(self.get_queryset())
+
+        if page_param is None and limit_param is None:
+            serializer = self.get_serializer(queryset, many=True)
+            return Response({
+                "count": queryset.count(),
+                "next": None,
+                "previous": None,
+                "results": serializer.data
+            })
+
+        return super().list(request, *args, **kwargs)
+
 class MultiMediaViewSet(viewsets.ModelViewSet):
     queryset = Multimedia.objects.all()
     serializer_class = MultimediaSerializer
