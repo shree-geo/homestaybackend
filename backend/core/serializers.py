@@ -456,8 +456,12 @@ class BookingSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'tenant', 'nights', 'status', 'payment_status', 'property', 'room_type']
 
     def validate(self, data):
-        if data['checkout'] <= data['checkin']:
+        checkin = data.get('checkin', getattr(self.instance, 'checkin', None))
+        checkout = data.get('checkout', getattr(self.instance, 'checkout', None))
+
+        if checkin and checkout and checkout <= checkin:
             raise serializers.ValidationError("Checkout must be after checkin")
+
         return data
 
     def create(self, validated_data):
@@ -495,6 +499,11 @@ class BookingSerializer(serializers.ModelSerializer):
             )
 
         return booking
+
+    def update(self, instance, validated_data):
+        validated_data.pop('checkin', None)
+        validated_data.pop('checkout', None)
+        return super().update(instance, validated_data)
 
 
 class BookingCreateSerializer(serializers.Serializer):

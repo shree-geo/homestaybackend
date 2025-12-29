@@ -375,10 +375,18 @@ class RoomViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='by-property/(?P<property_id>[^/.]+)')
     def by_property(self, request, property_id=None):
+        tenant = get_tenant_from_token(request)
+
         queryset = Room.objects.filter(
-            room_type__property_id=property_id,
-            status='AVAILABLE'
+            room_type__property_id=property_id
         ).select_related('room_type')
+
+        if tenant:
+            queryset = queryset.filter(
+                room_type__property__tenant=tenant
+            )
+        else:
+            queryset = queryset.filter(status='AVAILABLE')
 
         page = self.paginate_queryset(queryset)
         if page is not None:
@@ -387,7 +395,6 @@ class RoomViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
-
 
 # ===== Rate Plan ViewSets =====
 
