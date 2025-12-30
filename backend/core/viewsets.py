@@ -374,16 +374,13 @@ class RoomViewSet(viewsets.ModelViewSet):
         return [permissions.IsAuthenticated(), BelongsToTenant()]
 
     def get_queryset(self):
-        if self.request.method in permissions.SAFE_METHODS:
-            return Room.objects.filter(status='AVAILABLE')
-
         tenant = get_tenant_from_token(self.request)
         if tenant:
             return Room.objects.filter(
                 room_type__property__tenant=tenant
             )
 
-        return Room.objects.none()
+        return Room.objects.filter(status='AVAILABLE')
 
     @action(detail=False, methods=['get'], url_path='by-property/(?P<property_id>[^/.]+)')
     def by_property(self, request, property_id=None):
