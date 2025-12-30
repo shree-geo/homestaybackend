@@ -439,6 +439,7 @@ class BookingGuestInfoSerializer(serializers.ModelSerializer):
 class BookingSerializer(serializers.ModelSerializer):
     guest_info = BookingGuestInfoSerializer(many=True, read_only=True)
     property_detail = PropertySerializer(source='property', read_only=True)
+    room_type_name = serializers.CharField(source='room_type.name', read_only=True)
     guest_name = serializers.CharField(write_only=True)
     guest_email = serializers.EmailField(write_only=True, required=False, allow_blank=True)
     guest_phone = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -447,7 +448,7 @@ class BookingSerializer(serializers.ModelSerializer):
     class Meta:
         model = Booking
         fields = [
-            'id', 'tenant', 'property', 'property_detail', 'room_type', 'room',
+            'id', 'tenant', 'property', 'property_detail', 'room_type_name','room_type', 'room',
             'source', 'checkin', 'checkout', 'nights', 'guests_count',
             'status', 'payment_status', 'total_amount', 'currency',
             'guest_info',
@@ -461,6 +462,16 @@ class BookingSerializer(serializers.ModelSerializer):
 
         if checkin and checkout and checkout <= checkin:
             raise serializers.ValidationError("Checkout must be after checkin")
+
+        room = data.get('room')
+        guests_count = data.get('guests_count', 1)
+
+        if room:
+            max_occupancy = room.room_type.max_occupancy
+            if guests_count > max_occupancy:
+                raise serializers.ValidationError({
+                    "guests_count": f"Maximum occupancy for this room type is {max_occupancy}"
+                })
 
         return data
 
