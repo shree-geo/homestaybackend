@@ -109,7 +109,7 @@ class MultiMediaViewSet(viewsets.ModelViewSet):
 class CommunityViewSet(viewsets.ModelViewSet):
     queryset = Community.objects.all()
     serializer_class = CommunitySerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['state', 'district', 'municipality']
     search_fields = ['name', 'description']
@@ -537,9 +537,6 @@ class BookingViewSet(viewsets.ModelViewSet):
             booking.status = 'CHECKED_IN'
             booking.save(update_fields=['status'])
 
-            booking.room.status = 'OCCUPIED'
-            booking.room.save(update_fields=['status'])
-
         return Response(self.get_serializer(booking).data)
 
     @action(detail=True, methods=['post'])
@@ -556,9 +553,6 @@ class BookingViewSet(viewsets.ModelViewSet):
             booking.status = 'CHECKED_OUT'
             booking.save(update_fields=['status'])
 
-            booking.room.status = 'AVAILABLE'
-            booking.room.save(update_fields=['status'])
-
         return Response(self.get_serializer(booking).data)
 
     @action(detail=True, methods=['post'])
@@ -574,10 +568,6 @@ class BookingViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             booking.status = 'CANCELLED'
             booking.save(update_fields=['status'])
-
-            # Room stays AVAILABLE (since not checked in)
-            booking.room.status = 'AVAILABLE'
-            booking.room.save(update_fields=['status'])
 
         return Response(self.get_serializer(booking).data)
 

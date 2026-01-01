@@ -1,7 +1,9 @@
 import django_filters
-from django.db.models import Q
+from django.db.models import OuterRef, Exists
 from datetime import datetime
-from .models import Property, Booking
+
+from .constants import ACTIVE_BOOKING_STATUSES
+from .models import Property, Booking, Room
 
 
 class PropertyAvailabilityFilter(django_filters.FilterSet):
@@ -22,7 +24,7 @@ class PropertyAvailabilityFilter(django_filters.FilterSet):
             'community',
         ]
 
-    def filter_available_rooms(self, queryset, name, value):
+    def filter_available(self, queryset, name, value):
         if name == 'checkout':
             return queryset
 
@@ -38,14 +40,24 @@ class PropertyAvailabilityFilter(django_filters.FilterSet):
         except ValueError:
             return queryset.none()
 
-        overlapping_room_ids = Booking.objects.filter(
-            Q(checkin__lt=checkout) & Q(checkout__gt=checkin),
-            status__in=['PENDING', 'CONFIRMED', 'CHECKED_IN']
-        ).values_list('room_id', flat=True)
+        overlapping_booking = Booking.objects.filter(
+            room=OuterRef('pk'),
+            status__in=ACTIVE_BOOKING_STATUSES,
+            checkin__lt=checkout,
+            checkout__gt=checkin,
+        )
 
-        return queryset.filter(
-            room_types__rooms__status='AVAILABLE'
-        ).exclude(
-            room_types__rooms__id__in=overlapping_room_ids
-        ).distinct()
+        available_rooms = Room.objects.filter(
+            room_type__property=OuterRef('pk'),
+            status='AVAILABLE',
+        ).annotate(
+            has_overlap=Exists(overlapping_booking)
+        ).filter(
+            has_overlap=False
+        )
 
+        return queryset.annotate(
+            has_available_room=Exists(available_rooms)
+        ).filter(
+            has_available_room=True
+        )
